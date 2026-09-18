@@ -1,0 +1,30 @@
+{
+  "folders": [
+    {
+      "name": "CatCar App",
+      "path": "catcar-app"
+    },
+    {
+      "name": "CatCar Auth Function",
+      "path": "catcar-auth-function"
+    },
+    {
+      "name": "CatCar Database Infrastructure",
+      "path": "catcar-database-infra"
+    },
+    {
+      "name": "CatCar Kubernetes Infrastructure",
+      "path": "catcar-kubernetes-infra"
+    }
+  ],
+  "settings": {
+    "dotnet.defaultSolution": "catcar-app/CatCar.slnx",
+    "[csharp]": {
+      "editor.formatOnSave": true
+    },
+    "terraform.languageServer.enable": true,
+    "[terraform]": {
+      "editor.formatOnSave": true
+    }
+  }
+}
