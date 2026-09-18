@@ -238,10 +238,16 @@ ensure_federated_credential() {
             --id "$application_object_id" \
             --query "[?name=='$credential_name'].audiences[0] | [0]" \
             --output tsv)"
-        [[ "$existing_subject" == "$subject" && "$existing_issuer" == "$OIDC_ISSUER" && "$existing_audience" == "$OIDC_AUDIENCE" ]] \
-            || fail "federated credential $credential_name exists with a different trust configuration"
-        printf 'Reusing federated credential %s.\n' "$credential_name"
-        return
+        if [[ "$existing_subject" == "$subject" && "$existing_issuer" == "$OIDC_ISSUER" && "$existing_audience" == "$OIDC_AUDIENCE" ]]; then
+            printf 'Reusing federated credential %s.\n' "$credential_name"
+            return
+        fi
+        printf 'Recreating federated credential %s with updated subject.\n' "$credential_name"
+        az ad app federated-credential delete \
+            --id "$application_object_id" \
+            --federated-credential-id "$credential_name" \
+            --only-show-errors \
+            --output none
     fi
 
     parameters_file="$(mktemp)"
@@ -372,6 +378,16 @@ github_repository="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 [[ -n "$tenant_id" ]] || fail "Azure CLI did not return a tenant ID"
 [[ "$github_repository" =~ ^[[:alnum:]_.-]+/[[:alnum:]_.-]+$ ]] || fail "GitHub CLI returned an invalid repository name: $github_repository"
 
+github_org="${github_repository%%/*}"
+github_repo_name="${github_repository##*/}"
+github_repo_id="$(gh repo view "$github_repository" --json id --jq .id 2>/dev/null || echo "")"
+github_org_id="$(gh api "orgs/$github_org" --jq .id 2>/dev/null || echo "")"
+
+if [[ -n "$github_org_id" && -n "$github_repo_id" ]]; then
+    oidc_subject_prefix="repo:${github_org}@${github_org_id}/${github_repo_name}@${github_repo_id}"
+else
+    oidc_subject_prefix="repo:${github_repository}"
+fi
 preflight_self_hosted_runner
 
 if [[ -z "$AZURE_LOCATION" ]]; then
@@ -435,15 +451,15 @@ ensure_application "$PLAN_APPLICATION_NAME"
 plan_client_id="$application_client_id"
 ensure_service_principal
 plan_service_principal_object_id="$service_principal_object_id"
-ensure_federated_credential "github-main" "repo:$github_repository:ref:refs/heads/main"
-ensure_federated_credential "github-pull-request" "repo:$github_repository:pull_request"
+ensure_federated_credential "github-main" "${oidc_subject_prefix}:ref:refs/heads/main"
+ensure_federated_credential "github-pull-request" "${oidc_subject_prefix}:pull_request"
 ensure_role_assignment "$plan_service_principal_object_id" "ServicePrincipal" "Reader" "/subscriptions/$subscription_id"
 
 ensure_application "$DEPLOY_APPLICATION_NAME"
 deploy_client_id="$application_client_id"
 ensure_service_principal
 deploy_service_principal_object_id="$service_principal_object_id"
-ensure_federated_credential "github-production" "repo:$github_repository:environment:$GITHUB_ENVIRONMENT"
+ensure_federated_credential "github-production" "${oidc_subject_prefix}:environment:$GITHUB_ENVIRONMENT"
 foundation_resource_group_id="$(az group show --name "$FOUNDATION_RESOURCE_GROUP" --subscription "$subscription_id" --query id --output tsv)"
 workload_resource_group_id="$(az group show --name "$WORKLOAD_RESOURCE_GROUP" --subscription "$subscription_id" --query id --output tsv)"
 ensure_role_assignment "$deploy_service_principal_object_id" "ServicePrincipal" "Contributor" "$foundation_resource_group_id"
