@@ -21,9 +21,10 @@
 - [Local Development Runtime with .NET Aspire](#local-development-runtime-with-net-aspire)
 - [Quick Start Guide](#quick-start-guide)
 - [Makefile Developer Commands](#makefile-developer-commands)
+- [Automation Scripts](#automation-scripts)
+- [Project Documentation & Architecture Records](#project-documentation--architecture-records)
 - [Submodule Workflow & Contribution Guide](#submodule-workflow--contribution-guide)
 - [Platform Technology Stack](#platform-technology-stack)
-
 ---
 
 ## Repository Topology
@@ -316,6 +317,49 @@ The platform includes a standardized GNU `Makefile` configured with strict shell
 | `make git-status` | Displays short branch status and submodule commit SHAs | `git status --short --branch` and `git submodule status` |
 | `make git-sync` | Rebase-pulls platform and syncs submodules to remote heads | `git pull --rebase` and `git submodule update --remote --merge` |
 
+---
+
+## Automation Scripts
+
+The platform provides standardized shell scripts located in [`scripts/`](scripts/) for local environment setup and cloud control-plane initialization:
+
+| Script Path | Purpose | Description |
+| :--- | :--- | :--- |
+| [`scripts/kind-with-registry.sh`](scripts/kind-with-registry.sh) | Local Kubernetes Cluster | Creates a local multi-node [Kind](https://kind.sigs.k8s.io/) cluster with an integrated Docker container registry on `localhost:5001`. |
+| [`scripts/bootstrap-azure.sh`](scripts/bootstrap-azure.sh) | Azure & GitHub Bootstrap | Establishes the Azure foundation (Resource Groups, Storage Account, Microsoft Entra OIDC Apps, RBAC) and GitHub Actions environments/secrets without provisioning application workloads. |
+
+For detailed usage instructions and governance requirements for Azure bootstrap, refer to the [Azure Bootstrap Guide](docs/azure-bootstrap.md).
+
+---
+
+## Project Documentation & Architecture Records
+
+All architectural decisions, Domain-Driven Design artifacts, RFC proposals, security audits, and phase requirements are documented in [`docs/`](docs/):
+
+### Architecture Decision Records (ADRs)
+- [ADR 001: Asynchronous Cross-Context Communication with a Transactional Outbox](docs/architecture/adr/001-asynchronous-communication-outbox.md)
+- [ADR 002: HPA Workload Scaling and APIM Rate Limiting](docs/architecture/adr/002-hpa-and-apim-scaling.md)
+- [ADR 003: Multi-Repository Topology and Aspire Submodule Composition](docs/architecture/adr/003-repository-topology.md)
+
+### Requests for Comments (RFCs)
+- [RFC 001: Cloud Provider Selection (Microsoft Azure)](docs/architecture/rfc/001-cloud-provider-selection.md)
+- [RFC 002: Managed Database Engine Selection (PostgreSQL 17)](docs/architecture/rfc/002-managed-database.md)
+- [RFC 003: Serverless Customer Authentication with Azure Functions](docs/architecture/rfc/003-serverless-auth.md)
+
+### Domain-Driven Design (DDD) Artifacts
+- [DDD Overview & Strategic Design](docs/ddd/README.md)
+- [Strategic Context Map](docs/ddd/context-map.md)
+- [Module Structure & Solution Organization](docs/ddd/module-structure.md)
+- [Event Storming Domain Flows](docs/ddd/event-storming.md)
+- [Ubiquitous Language Glossary](docs/ddd/glossary.md)
+
+### Operations, Security & Requirements
+- [Azure Control-Plane Bootstrap Runbook](docs/azure-bootstrap.md)
+- [Phase 1/2 Vulnerability & Security Report](docs/vulnerability-report.md)
+- [Cloud Components & Topology Specification](docs/architecture/cloud-components.md)
+- [Authentication & Work Order Sequence Diagrams](docs/architecture/auth-sequence.md)
+- [Entity-Relationship (ER) Model](docs/architecture/er-model.md)
+- [Tech Challenge Phase Requirements (Fase 1-4)](docs/requirements/)
 ---
 
 ## Submodule Workflow & Contribution Guide
