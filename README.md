@@ -32,19 +32,20 @@ Open `catcar.code-workspace` in VS Code for the four-repository workspace.
 
 ## Development workflow
 
-Install the .NET SDK, Aspire CLI, Terraform, and optionally [just](https://github.com/casey/just). The same targets are available through `make`.
+Install the .NET SDK, Aspire CLI, and Terraform. Development workflows are managed via `make`.
 
 ```bash
-just restore
-just dev
-just test
-just infra-validate
+make restore
+make dev
+make test
+make infra-validate
 ```
 
-- `just dev` starts the Aspire AppHost from `catcar-app`.
-- `just build`, `just test`, and `just format` operate on the application solution.
-- `just infra-validate` initializes Terraform without a backend and validates both infrastructure modules.
-- `just git-status` shows the platform and component revisions.
+- `make help` lists all available targets and descriptions.
+- `make dev` starts the Aspire AppHost from `catcar-app`.
+- `make build`, `make test`, and `make format` operate on the application solutions.
+- `make infra-validate` initializes Terraform without a backend and validates both infrastructure modules.
+- `make git-status` shows the platform and component revisions.
 
 ## Submodule management
 
