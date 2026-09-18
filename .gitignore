@@ -13,4 +13,5 @@ Desktop.ini
 # Local environment files
 .env
 .env.*
+!.env-sample
 !.env.example
