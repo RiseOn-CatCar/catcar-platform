@@ -263,8 +263,8 @@ Como parte das correções imediatas de governança e infraestrutura, foram impl
    * **Multi-Repositório Nativo:** O script itera automaticamente sobre os 4 repositórios da organização (`catcar-app`, `catcar-auth-function`, `catcar-database-infra`, `catcar-kubernetes-infra`) e o meta-repo, provisionando variáveis e secrets em cada um.
    * **Workload Identity & OIDC Granular:** Configuração de aplicações dedicadas no Microsoft Entra ID com federated credentials apontando para as branches (`develop`, `main`), pull requests e environments (`homologation`, `production`).
    * **Branch Protection Automatizada:** Implementação da função `ensure_branch_protection` que configura via GitHub API REST as regras em `main` e `develop` (exigência de 1 aprovação em PR, descarte de revisões obsoletas, bloqueio de force-push e bloqueio de exclusão).
-2. **Sincronização Absoluta entre Repositórios:**
-   * O script `bootstrap-azure.sh` e o manual `docs/azure-bootstrap.md` foram sincronizados de forma idêntica (byte-a-byte) entre a raiz, `catcar-kubernetes-infra` e `catcar-app`.
+2. **Atualização Centralizada no Meta-Repositório:**
+   * O script `bootstrap-azure.sh` e o manual `docs/azure-bootstrap.md` foram atualizados na raiz do meta-repositório para servir como ponto central de operação e governança do bootstrap.
 3. **Validação de Sintaxe e Simulação:**
    * Executado `bash -n` em todos os scripts shell com 100% de aprovação.
    * Executado `./scripts/bootstrap-azure.sh --dry-run` demonstrando o plano completo de criação de contas de storage (`stcatcarhomolog...`, `stcatcarprod...`), resource groups isolados e injeção de segredos.

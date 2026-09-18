@@ -116,7 +116,7 @@ For each targeted environment, `bootstrap-azure.sh` provisions and binds the fol
 +---------------------------------------------------+---------------------------------------------------+
 ```
 
-* **State Security**: Storage accounts enforce HTTPS-only (TLS 1.2+), disabled public blob access, disabled shared keys, and Entra ID RBAC authorization (`use_azuread_auth=true`).
+* **State Security**: Storage accounts enforce HTTPS-only (TLS 1.2+), disabled public blob access, disabled shared keys, and Entra ID RBAC authorization (`use_azuread_auth=true`). The bootstrap keeps the storage account public endpoint enabled, so network isolation remains public-endpoint-based unless private networking is added separately.
 
 ---
 
@@ -141,11 +141,11 @@ The script iterates through all target repositories and populates variables, sec
 * `AZURE_TENANT_ID`: Microsoft Entra tenant ID.
 * `AZURE_SUBSCRIPTION_ID`: Azure subscription ID.
 * `AZURE_LOCATION`: Azure deployment region (e.g. `brazilsouth`).
-* `CATCAR_FOUNDATION_RESOURCE_GROUP`: Default foundation resource group name (`CatCar` or `rg-catcar-homolog`).
+* `CATCAR_FOUNDATION_RESOURCE_GROUP`: Default foundation resource group name when a single environment is bootstrapped.
 * `APIM_PUBLISHER_NAME`: Organization name for API Management.
 * `APIM_PUBLISHER_EMAIL`: Operations contact email.
-* `AZURE_TF_STATE_RG`: Default state backend resource group.
-* `AZURE_TF_STATE_STORAGE_ACCOUNT`: Default state storage account name.
+* `AZURE_TF_STATE_RG`: Default state backend resource group when a single environment is bootstrapped.
+* `AZURE_TF_STATE_STORAGE_ACCOUNT`: Default state storage account name when a single environment is bootstrapped.
 
 #### 2. Automated Branch Protection Rules (`main` and `develop`):
 Unless `--skip-branch-protection` is specified, the script automatically configures branch protection via GitHub REST API (`PUT /repos/{owner}/{repo}/branches/{branch}/protection`):
@@ -177,6 +177,7 @@ Unless `--skip-branch-protection` is specified, the script automatically configu
   * `POSTGRES_AUTH_READONLY_PASSWORD`
   * `JWT_SECRET`
   * `CUSTOMER_JWT_SIGNING_KEY`
+  * When `--environment all` is used and the per-environment JWT overrides are unset, the script generates distinct `JWT_SECRET_HOMOLOG` / `JWT_SECRET_PROD` and `CUSTOMER_JWT_SIGNING_KEY_HOMOLOG` / `CUSTOMER_JWT_SIGNING_KEY_PROD` values before persisting the effective configuration.
 
 ---
 

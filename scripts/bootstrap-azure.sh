@@ -119,10 +119,37 @@ generate_jwt_key() {
     fi
 }
 
+upsert_env_file_entry() {
+    local target_file="$1"
+    local key="$2"
+    local value="$3"
+    local tmp_file
+
+    tmp_file="$(mktemp)"
+    awk -v key="$key" -v value="$value" '
+        BEGIN { updated = 0; replacement = key "=\"" value "\"" }
+        $0 ~ "^[[:space:]]*" key "=" {
+            if (updated == 0) {
+                print replacement
+                updated = 1
+            }
+            next
+        }
+        { print }
+        END {
+            if (updated == 0) {
+                print replacement
+            }
+        }
+    ' "$target_file" > "$tmp_file"
+    mv "$tmp_file" "$target_file"
+}
+
 save_env_file() {
     local target_file="${1:-.env}"
     if [[ -f "$target_file" ]]; then
         printf 'Ensuring %s contains all effective configuration and secrets...\n' "$target_file"
+        chmod 600 "$target_file"
     else
         printf 'Creating %s (mode 0600) with configuration and generated secrets...\n' "$target_file"
         touch "$target_file"
@@ -143,7 +170,6 @@ POSTGRES_AUTH_READONLY_PASSWORD="${POSTGRES_AUTH_READONLY_PASSWORD}"
 JWT_SECRET="${JWT_SECRET}"
 CUSTOMER_JWT_SIGNING_KEY="${CUSTOMER_JWT_SIGNING_KEY}"
 EOF
-        return 0
     fi
 
     declare -A vars_to_persist=(
@@ -155,10 +181,27 @@ EOF
         ["CUSTOMER_JWT_SIGNING_KEY"]="$CUSTOMER_JWT_SIGNING_KEY"
     )
 
+    if [[ -n "${JWT_SECRET_HOMOLOG:-}" ]]; then
+        vars_to_persist["JWT_SECRET_HOMOLOG"]="$JWT_SECRET_HOMOLOG"
+    fi
+    if [[ -n "${CUSTOMER_JWT_SIGNING_KEY_HOMOLOG:-}" ]]; then
+        vars_to_persist["CUSTOMER_JWT_SIGNING_KEY_HOMOLOG"]="$CUSTOMER_JWT_SIGNING_KEY_HOMOLOG"
+    fi
+    if [[ -n "${JWT_SECRET_PROD:-}" ]]; then
+        vars_to_persist["JWT_SECRET_PROD"]="$JWT_SECRET_PROD"
+    fi
+    if [[ -n "${CUSTOMER_JWT_SIGNING_KEY_PROD:-}" ]]; then
+        vars_to_persist["CUSTOMER_JWT_SIGNING_KEY_PROD"]="$CUSTOMER_JWT_SIGNING_KEY_PROD"
+    fi
+
     for key in "APIM_PUBLISHER_NAME" "APIM_PUBLISHER_EMAIL" "POSTGRES_ADMIN_PASSWORD" "POSTGRES_AUTH_READONLY_PASSWORD" "JWT_SECRET" "CUSTOMER_JWT_SIGNING_KEY"; do
         local val="${vars_to_persist[$key]}"
-        if ! grep -q "^[[:space:]]*${key}=" "$target_file" 2>/dev/null; then
-            printf '%s="%s"\n' "$key" "$val" >> "$target_file"
+        upsert_env_file_entry "$target_file" "$key" "$val"
+    done
+
+    for key in "JWT_SECRET_HOMOLOG" "CUSTOMER_JWT_SIGNING_KEY_HOMOLOG" "JWT_SECRET_PROD" "CUSTOMER_JWT_SIGNING_KEY_PROD"; do
+        if [[ -n "${vars_to_persist[$key]:-}" ]]; then
+            upsert_env_file_entry "$target_file" "$key" "${vars_to_persist[$key]}"
         fi
     done
 }
@@ -504,7 +547,7 @@ ensure_branch_protection() {
         --input - <<EOF 2>&1
 {
   "required_status_checks": null,
-  "enforce_admins": false,
+  "enforce_admins": true,
   "required_pull_request_reviews": {
     "dismiss_stale_reviews": true,
     "require_code_owner_reviews": false,
@@ -672,6 +715,24 @@ fi
 if [[ -z "${CUSTOMER_JWT_SIGNING_KEY:-}" ]]; then
     CUSTOMER_JWT_SIGNING_KEY="$(generate_jwt_key)"
     generated_secrets+=("CUSTOMER_JWT_SIGNING_KEY")
+fi
+if [[ "$target_environment" == "all" ]]; then
+    if [[ -z "${JWT_SECRET_HOMOLOG:-}" ]]; then
+        JWT_SECRET_HOMOLOG="$(generate_jwt_key)"
+        generated_secrets+=("JWT_SECRET_HOMOLOG")
+    fi
+    if [[ -z "${CUSTOMER_JWT_SIGNING_KEY_HOMOLOG:-}" ]]; then
+        CUSTOMER_JWT_SIGNING_KEY_HOMOLOG="$(generate_jwt_key)"
+        generated_secrets+=("CUSTOMER_JWT_SIGNING_KEY_HOMOLOG")
+    fi
+    if [[ -z "${JWT_SECRET_PROD:-}" ]]; then
+        JWT_SECRET_PROD="$(generate_jwt_key)"
+        generated_secrets+=("JWT_SECRET_PROD")
+    fi
+    if [[ -z "${CUSTOMER_JWT_SIGNING_KEY_PROD:-}" ]]; then
+        CUSTOMER_JWT_SIGNING_KEY_PROD="$(generate_jwt_key)"
+        generated_secrets+=("CUSTOMER_JWT_SIGNING_KEY_PROD")
+    fi
 fi
 export APIM_PUBLISHER_NAME APIM_PUBLISHER_EMAIL POSTGRES_ADMIN_PASSWORD POSTGRES_AUTH_READONLY_PASSWORD JWT_SECRET CUSTOMER_JWT_SIGNING_KEY
 
@@ -850,6 +911,8 @@ ensure_service_principal
 plan_service_principal_object_id="$service_principal_object_id"
 ensure_role_assignment "$plan_service_principal_object_id" "ServicePrincipal" "Reader" "/subscriptions/$subscription_id"
 
+declare -A deploy_client_ids=()
+
 for target_repo in "${all_target_repos[@]}"; do
     repo_slug="${target_repo##*/}"
     clean_slug="${repo_slug//[^a-zA-Z0-9_-]/-}"
@@ -887,6 +950,7 @@ for env in "${environments[@]}"; do
     printf '\n--- Setting up Deploy Identity: %s ---\n' "$DEPLOY_APP_NAME"
     ensure_application "$DEPLOY_APP_NAME"
     deploy_client_id="$application_client_id"
+    deploy_client_ids["$env"]="$deploy_client_id"
     ensure_service_principal
     deploy_service_principal_object_id="$service_principal_object_id"
 
@@ -948,6 +1012,10 @@ printf '\n======================================================================
 printf 'Configuring GitHub Repositories (Variables, Branch Protection, Environments)\n'
 printf '==============================================================================\n'
 
+if ((${#environments[@]} == 1)); then
+    get_env_config "${environments[0]}"
+fi
+
 for target_repo in "${all_target_repos[@]}"; do
     if ! gh repo view "$target_repo" >/dev/null 2>&1; then
         printf 'warning: repository %s is not accessible via gh; skipping.\n' "$target_repo" >&2
@@ -964,9 +1032,13 @@ for target_repo in "${all_target_repos[@]}"; do
     set_repo_variable "$target_repo" AZURE_LOCATION "$AZURE_LOCATION"
     set_repo_variable "$target_repo" APIM_PUBLISHER_NAME "$APIM_PUBLISHER_NAME"
     set_repo_variable "$target_repo" APIM_PUBLISHER_EMAIL "$APIM_PUBLISHER_EMAIL"
-    set_repo_variable "$target_repo" CATCAR_FOUNDATION_RESOURCE_GROUP "$FOUNDATION_RG"
-    set_repo_variable "$target_repo" AZURE_TF_STATE_RG "$STATE_RG"
-    set_repo_variable "$target_repo" AZURE_TF_STATE_STORAGE_ACCOUNT "$STATE_STORAGE_ACCOUNT"
+    if ((${#environments[@]} == 1)); then
+        set_repo_variable "$target_repo" CATCAR_FOUNDATION_RESOURCE_GROUP "$FOUNDATION_RG"
+        set_repo_variable "$target_repo" AZURE_TF_STATE_RG "$STATE_RG"
+        set_repo_variable "$target_repo" AZURE_TF_STATE_STORAGE_ACCOUNT "$STATE_STORAGE_ACCOUNT"
+    else
+        printf 'Skipping environment-specific repository defaults on %s because multiple environments were requested.\n' "$target_repo"
+    fi
 
     # Branch Protection Rules (main and develop)
     if [[ "$skip_branch_protection" != "true" ]]; then
@@ -983,7 +1055,7 @@ for target_repo in "${all_target_repos[@]}"; do
         gh api --method PUT "repos/$target_repo/environments/$GH_ENV" --silent 2>/dev/null || true
 
         # Environment-scoped variables
-        set_env_variable "$target_repo" "$GH_ENV" AZURE_DEPLOY_CLIENT_ID "$deploy_client_id"
+        set_env_variable "$target_repo" "$GH_ENV" AZURE_DEPLOY_CLIENT_ID "${deploy_client_ids[$env]}"
         set_env_variable "$target_repo" "$GH_ENV" CATCAR_FOUNDATION_RESOURCE_GROUP "$FOUNDATION_RG"
         set_env_variable "$target_repo" "$GH_ENV" ASPIRE_WORKLOAD_RESOURCE_GROUP "$WORKLOAD_RG"
         set_env_variable "$target_repo" "$GH_ENV" TF_BACKEND_RESOURCE_GROUP "$STATE_RG"
