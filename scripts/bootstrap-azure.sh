@@ -401,10 +401,16 @@ ensure_federated_credential() {
             --id "$application_object_id" \
             --query "[?name=='$credential_name'].audiences[0] | [0]" \
             --output tsv)"
-        [[ "$existing_subject" == "$subject" && "$existing_issuer" == "$OIDC_ISSUER" && "$existing_audience" == "$OIDC_AUDIENCE" ]] \
-            || fail "federated credential $credential_name exists with a different trust configuration"
-        printf 'Reusing federated credential %s.\n' "$credential_name"
-        return
+        if [[ "$existing_subject" == "$subject" && "$existing_issuer" == "$OIDC_ISSUER" && "$existing_audience" == "$OIDC_AUDIENCE" ]]; then
+            printf 'Reusing federated credential %s.\n' "$credential_name"
+            return
+        fi
+        printf 'Recreating federated credential %s with updated subject.\n' "$credential_name"
+        az ad app federated-credential delete \
+            --id "$application_object_id" \
+            --federated-credential-id "$credential_name" \
+            --only-show-errors \
+            --output none
     fi
 
     parameters_file="$(mktemp)"
@@ -774,6 +780,10 @@ done
 if [[ "$repo_already_present" == "false" ]]; then
     all_target_repos+=("${github_repository}")
 fi
+
+for target_repo in "${all_target_repos[@]}"; do
+    preflight_self_hosted_runner "$target_repo"
+done
 
 if [[ -z "$AZURE_LOCATION" ]]; then
     if az group exists --name "CatCar" --subscription "$subscription_id" --output tsv 2>/dev/null | grep -q true; then
