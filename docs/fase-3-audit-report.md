@@ -24,7 +24,7 @@ A auditoria avaliou a conformidade da solução CatCar com as diretrizes obrigat
 | **3. Infraestrutura Obrigatória** | API Gateway, Function Serverless, Banco Gerenciado, Cluster Kubernetes escalável e provisionamento 100% Terraform. | **Conforme** | Azure APIM, Azure Container Apps/Function v4, PostgreSQL 17 Flexible Server com DNS privado e AKS multi-zona com autoscaling provisionados via Terraform. |
 | **4. Monitoramento & Observabilidade** | Azure Monitor/OTel, métricas de latência/CPU/memória/uptime, alertas de falhas de OS, logs estruturados e dashboards de negócio. | **Parcialmente Conforme** | Alertas e Log Analytics/Application Insights 100% codificados no Terraform. Contudo, o Dashboard KQL mede requisições HTTP em vez de ciclo de vida de OS, e a métrica C# omite o status de Finalização. |
 | **5. Documentação Arquitetural** | Diagramas de Componentes e Sequência, RFCs (Nuvem, Banco, Auth), ADRs (Comunicação, HPA/APIM, Repos) e Modelo Relacional ER. | **Conforme** | Documentação rica em Mermaid cobrindo topologia, sequências de autenticação/OS, 3 RFCs formais, 3 ADRs decisórias e modelo ER completo com 12 entidades. |
-| **6. Entregáveis do Tech Challenge** | 4 repositórios com READMEs e Dockerfiles, vídeo demonstrativo (até 15 min), PDF único e inclusão de `soat-architecture`. | **Parcialmente Conforme** | Código, Dockerfiles e pipelines entregues. Pendentes: gravação do vídeo demonstrativo, geração do PDF de submissão e inclusão formal do usuário institucional no GitHub. |
+| **6. Entregáveis do Tech Challenge** | 4 repositórios com READMEs e Dockerfiles, vídeo demonstrativo (até 15 min), PDF único e inclusão de `soat-architecture`. | **Parcialmente Conforme** | READMEs, collection Postman, documento consolidado e PDF foram preparados. Permanecem ações externas: publicar o vídeo e anexar a comprovação visual do acesso institucional no Portal do Aluno. |
 
 ---
 
@@ -126,11 +126,12 @@ A auditoria avaliou a conformidade da solução CatCar com as diretrizes obrigat
   * Dockerfiles funcionais multi-stage para a API (`catcar-app/Dockerfile`) e para a Function (`catcar-auth-function/Dockerfile`).
   * Pipelines de CI/CD completas em todos os 4 repositórios.
   * Requisitos do vídeo e da entrega no portal mapeados em `docs/requirements/Fase_3_Tech_Challenge.md` (linhas 108–125) e em `catcar-app/docs/status-requisitos-entregaveis.md`.
+  * Diagramas Mermaid específicos e links diretos de Swagger/Scalar/OpenAPI/Postman nos quatro READMEs dos submódulos.
+  * Collection Postman v2.1.0 e environment template em `docs/postman/`.
+  * Documento consolidado de entrega em `docs/delivery/TECH_CHALLENGE_FASE_3_ENTREGA.md` e equivalente HTML/PDF para o Portal do Aluno.
 * **O que falta / Gaps:**
-  * READMEs dos submódulos necessitam de diagramas arquiteturais dedicados e links diretos para a documentação Swagger/Postman.
-  * Gravação do vídeo de demonstração (até 15 min).
-  * Geração do PDF final de entrega para submissão no portal acadêmico.
-  * Confirmação do aceite de convite do usuário `soat-architecture` como colaborador nos repositórios.
+  * Publicar o vídeo demonstrativo (até 15 min) e substituir a URL pendente no documento de entrega.
+  * Anexar evidência visual do aceite/acesso ativo de `soat-architecture` nos quatro repositórios durante a submissão.
 
 ---
 
@@ -239,18 +240,15 @@ Esta seção detalha os **7 gaps técnicos e conceituais** identificados na base
 
 ---
 
-### GAP 7: READMEs dos Submódulos sem Diagramas Dedicados e Links Diretos para Swagger/Postman
-* **Localização:** `catcar-app/README.md`, `catcar-database-infra/README.md`, `catcar-kubernetes-infra/README.md`, `catcar-auth-function/README.md`.
-* **Problema Concreto:**
-  O edital normativo exige para o `README.md` de cada um dos repositórios:
-  > * "Diagrama da arquitetura específica daquele repositório."
-  > * "Link para o Swagger/Postman das APIs."
-  Atualmente:
-  * `catcar-app/README.md`: Contém apenas tabelas descritivas e árvore de arquivos; não possui diagrama Mermaid/ASCII dedicado da arquitetura de software modular. O link de API aponta para Scalar UI e OpenAPI JSON, sem link explícito para Swagger (`/swagger`) ou collection Postman.
-  * `catcar-database-infra/README.md` e `catcar-kubernetes-infra/README.md`: Não contêm diagramas arquiteturais dedicados dos recursos provisionados por cada stack nem referências de Swagger/Postman.
-  * `catcar-auth-function/README.md`: Possui diagrama ASCII, mas não referencia links de Swagger/Postman.
-* **Impacto:** Apontamento de não-conformidade na avaliação formal dos entregáveis.
-* **Solução Necessária:** Inserir diagramas Mermaid dedicados em cada README e disponibilizar uma collection Postman exportada versionada no repositório, com links explícitos em todos os READMEs.
+### GAP 7: READMEs dos Submódulos sem Diagramas Dedicados e Links Diretos para Swagger/Postman — **RESOLVIDO**
+* **Correção aplicada:**
+  * `catcar-app/README.md` passou a documentar, em Mermaid, os Bounded Contexts, Vertical Slices, Wolverine Outbox, schemas EF Core/PostgreSQL e a orquestração Aspire AppHost.
+  * `catcar-auth-function/README.md` passou a documentar o HTTP Trigger, validação de dígitos do CPF, consulta somente leitura em `service_operations.customers` e a emissão JWT HMAC-SHA256, incluindo exemplos `curl`.
+  * `catcar-database-infra/README.md` passou a documentar PostgreSQL Flexible Server 17, `snet-postgresql`, DNS privado, Key Vault/Private Endpoint/RBAC e o isolamento por schemas.
+  * `catcar-kubernetes-infra/README.md` passou a documentar VNet, subnets, AKS multi-AZ, HPA 2–10, APIM/JWT/backends, ACR `AcrPull` e Azure Monitor/alertas/workbooks.
+  * Os quatro READMEs apontam para Swagger (`/swagger`), Scalar (`/docs`), OpenAPI (`/openapi/v1.json`, quando aplicável), a collection Postman e o environment template versionados em `docs/postman/`.
+* **Evidência:** `docs/postman/CatCar_Platform.postman_collection.json` (schema Postman Collection v2.1.0) e `docs/postman/CatCar_Platform.postman_environment.json`.
+* **Resultado:** o requisito de documentação específica por repositório e acesso direto ao contrato das APIs deixa de ser uma não-conformidade.
 
 ---
 
@@ -302,11 +300,12 @@ flowchart LR
    * Corrigir as queries KQL em `catcar-dashboard.json` para analisar eventos reais de negócio e tempos de ciclo de vida da OS.
 
 ### Fase 3: Documentação, Vídeo e Submissão Final
-1. **Enriquecimento dos READMEs dos 4 Submódulos:**
-   * Desenhar diagramas Mermaid específicos para cada componente (fluxo interno do app, componentes da function serverless, topologia do banco e rede/K8s).
-   * Adicionar link explícito para Swagger UI (`/swagger`) e exportar uma collection Postman versionada na raiz da documentação.
-2. **Gravação do Vídeo Demonstrativo (até 15 minutos):**
-   * Estruturar roteiro cobrindo: autenticação via CPF, execução das 4 pipelines de CI/CD, deploy automatizado, consumo de APIs protegidas, dashboard do Azure Monitor ao vivo e inspeção de traces distribuídos.
-   * Publicar no YouTube/Vimeo como não listado e incluir URL nos READMEs.
-3. **Geração do PDF de Entrega no Portal do Aluno:**
-   * Gerar documento PDF consolidado contendo: identificação do grupo, links dos 4 repositórios, link do vídeo demonstrativo, links das documentações e comprovante de acesso do usuário `soat-architecture`.
+1. **Documentação e artefatos de submissão — concluído:**
+   * Os quatro READMEs agora possuem diagramas Mermaid dedicados e links diretos para Swagger, Scalar, OpenAPI e Postman.
+   * A collection Postman v2.1.0, o environment template e o documento consolidado de entrega em Markdown/HTML/PDF foram versionados.
+2. **Gravação do Vídeo Demonstrativo (até 15 minutos) — pendente de ação externa:**
+   * Seguir o roteiro com autenticação CPF, execução das quatro pipelines CI/CD, deploy, consumo de APIs protegidas, Azure Monitor e traces distribuídos.
+   * Publicar no YouTube/Vimeo como não listado ou público e substituir a URL pendente no documento de entrega.
+3. **Submissão no Portal do Aluno — pendente de ação externa:**
+   * Conferir identificação acadêmica e anexar o PDF único gerado.
+   * Validar no GitHub o aceite do colaborador `soat-architecture`, anexar a evidência por repositório e concluir a submissão.

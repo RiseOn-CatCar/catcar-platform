@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CatCar Platform — Tech Challenge Fase 3</title>
+  <style>
+    @page { size: A4; margin: 18mm; }
+    body { color: #172033; font: 10.5pt/1.45 Arial, sans-serif; max-width: 900px; margin: 0 auto; }
+    h1, h2, h3 { color: #172554; break-after: avoid; }
+    h1 { border-bottom: 2px solid #2563eb; padding-bottom: 5px; }
+    h2 { margin-top: 28px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; break-inside: avoid; }
+    th, td { border: 1px solid #cbd5e1; padding: 7px; vertical-align: top; }
+    th { background: #eff6ff; text-align: left; }
+    a { color: #1d4ed8; overflow-wrap: anywhere; }
+    code { background: #f1f5f9; padding: 1px 3px; }
+    .cover { text-align: center; padding: 80px 12px 100px; page-break-after: always; }
+    .cover h1 { border: 0; font-size: 32pt; }
+    .tag { color: #1d4ed8; font-weight: bold; letter-spacing: .08em; text-transform: uppercase; }
+    .notice { background: #fefce8; border-left: 4px solid #eab308; padding: 10px 12px; }
+    .ok { background: #ecfdf5; border-left: 4px solid #16a34a; padding: 10px 12px; }
+    ol, ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <p class="tag">FIAP — SOAT Software Architecture Pós-Tech</p>
+    <h1>CatCar Platform</h1>
+    <p>Tech Challenge — Fase 3<br>Documento Consolidado de Entrega</p>
+    <p><strong>Grupo:</strong> RiseOn-CatCar<br><strong>Integrante:</strong> Davi Holanda<br><strong>Data:</strong> 18 de setembro de 2026</p>
+  </section>
+
+  <h1>1. Identificação do grupo</h1>
+  <table><tbody>
+    <tr><th>Nome do grupo</th><td>RiseOn-CatCar</td></tr>
+    <tr><th>Projeto</th><td>CatCar Platform — Plataforma Integrada de Gestão de Oficina Mecânica</td></tr>
+    <tr><th>Integrante</th><td>Davi Holanda</td></tr>
+    <tr><th>Turma / Curso</th><td>SOAT — Software Architecture Pós-Tech FIAP</td></tr>
+  </tbody></table>
+  <p class="notice">Antes de enviar ao Portal do Aluno, conferir matrícula e incluir todos os integrantes, caso aplicável, na capa do PDF.</p>
+
+  <h1>2. Repositórios entregues</h1>
+  <table><thead><tr><th>Repositório</th><th>Responsabilidade</th></tr></thead><tbody>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-platform">catcar-platform</a></td><td>Meta-repositório, documentação, automação e composição dos submódulos.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-app">catcar-app</a></td><td>Monólito modular .NET 10, DDD, EF Core, Wolverine Outbox e Aspire AppHost.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-auth-function">catcar-auth-function</a></td><td>Azure Function para autenticação CPF e emissão de JWT.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-database-infra">catcar-database-infra</a></td><td>Terraform de PostgreSQL Flexible Server, Key Vault, DNS privado e segredos.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-kubernetes-infra">catcar-kubernetes-infra</a></td><td>Terraform de VNet, AKS, ACR, APIM, Azure Monitor, alertas e workbooks.</td></tr>
+  </tbody></table>
+
+  <h1>3. Vídeo de demonstração (até 15 minutos)</h1>
+  <p><strong>URL (YouTube/Vimeo público ou não listado):</strong> <code>PENDENTE — inserir URL publicada antes da submissão.</code></p>
+  <table><thead><tr><th>Tempo</th><th>Cenário demonstrado</th></tr></thead><tbody>
+    <tr><td>00:00–00:45</td><td>Grupo, problema de oficina e topologia dos cinco repositórios.</td></tr>
+    <tr><td>00:45–02:00</td><td>Diagrama cloud: APIM, AKS, Function, VNet e dados privados.</td></tr>
+    <tr><td>02:00–03:30</td><td><code>POST /api/auth/customer</code> com CPF válido, JWT e <code>X-Correlation-Id</code>; rejeição de CPF inválido.</td></tr>
+    <tr><td>03:30–05:00</td><td>Login de Administrador/Técnico e distinção entre tokens de cliente e backoffice.</td></tr>
+    <tr><td>05:00–06:45</td><td>APIs protegidas: cliente, veículo, abertura/consulta de OS e métrica de execução.</td></tr>
+    <tr><td>06:45–08:00</td><td>Catálogo, inventário, orçamento e explicação do Wolverine Outbox.</td></tr>
+    <tr><td>08:00–09:15</td><td>Swagger, Scalar, OpenAPI e importação da collection/environment Postman.</td></tr>
+    <tr><td>09:15–11:00</td><td>Pipeline CI/CD dos quatro repositórios; <code>develop</code> para Homologação e <code>main</code> para Produção.</td></tr>
+    <tr><td>11:00–12:15</td><td>Deploy Terraform/AKS, HPA de 2–10 réplicas, APIM e ACR com <code>AcrPull</code>.</td></tr>
+    <tr><td>12:15–13:30</td><td>Azure Monitor/Application Insights: health checks, latência, CPU, memória, alertas e workbook.</td></tr>
+    <tr><td>13:30–14:30</td><td>Logs e traces distribuídos filtrados pelo mesmo <code>CorrelationId</code>.</td></tr>
+    <tr><td>14:30–15:00</td><td>Resumo da aderência e localização das evidências.</td></tr>
+  </tbody></table>
+
+  <h1>4. Documentação e evidências</h1>
+  <h2>Arquitetura, DDD, RFCs e ADRs</h2>
+  <ul>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/cloud-components.md">Diagrama de componentes e topologia cloud</a>; <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/auth-sequence.md">diagramas de sequência</a>; <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/er-model.md">modelo ER</a>.</li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/tree/main/docs/ddd">Artefatos DDD</a>: <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/ddd/context-map.md">Context Map</a>, <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/ddd/event-storming.md">Event Storming</a>, <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/ddd/module-structure.md">módulos</a> e <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/ddd/glossary.md">glossário</a>.</li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/rfc/001-cloud-provider-selection.md">RFC 001</a>, <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/rfc/002-managed-database.md">RFC 002</a>, <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/rfc/003-serverless-auth.md">RFC 003</a>.</li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/adr/001-asynchronous-communication-outbox.md">ADR 001</a>, <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/adr/002-hpa-and-apim-scaling.md">ADR 002</a> e <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/adr/003-repository-topology.md">ADR 003</a>.</li>
+  </ul>
+  <h2>Operação, segurança e APIs</h2>
+  <ul>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/azure-bootstrap.md">Runbook de bootstrap Azure</a>; <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/vulnerability-report.md">relatório de vulnerabilidades</a>; <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/fase-3-audit-report.md">auditoria Fase 3</a>.</li>
+    <li><a href="http://localhost:5000/swagger">Swagger UI</a>, <a href="http://localhost:5000/docs">Scalar</a> e <a href="http://localhost:5000/openapi/v1.json">OpenAPI v3 JSON</a>.</li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_collection.json">Collection Postman v2.1.0</a> e <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_environment.json">environment template</a>.</li>
+  </ul>
+
+  <h1>5. Acesso de <code>soat-architecture</code></h1>
+  <p class="ok"><strong>Confirmação registrada:</strong> <code>F3-ENT-06</code> no <a href="https://github.com/RiseOn-CatCar/catcar-app/blob/main/docs/status-requisitos-entregaveis.md">controle de requisitos</a> registra <code>soat-architecture</code> como colaborador com permissão de push nos quatro repositórios de entrega.</p>
+  <table><thead><tr><th>Repositório</th><th>Prova final a anexar</th></tr></thead><tbody>
+    <tr><td>catcar-app</td><td>Captura de <em>Settings → Collaborators and teams</em> com o usuário ativo.</td></tr>
+    <tr><td>catcar-auth-function</td><td>Captura de <em>Settings → Collaborators and teams</em> com o usuário ativo.</td></tr>
+    <tr><td>catcar-database-infra</td><td>Captura de <em>Settings → Collaborators and teams</em> com o usuário ativo.</td></tr>
+    <tr><td>catcar-kubernetes-infra</td><td>Captura de <em>Settings → Collaborators and teams</em> com o usuário ativo.</td></tr>
+  </tbody></table>
+  <ol><li>Um administrador confirma em cada repositório que o convite foi aceito e a permissão é no mínimo leitura.</li><li>Registra uma captura por repositório sem expor tokens.</li><li>Anexa as quatro capturas ao PDF ou às observações do Portal do Aluno.</li></ol>
+
+  <h1>6. Resumo executivo de aderência</h1>
+  <table><thead><tr><th>Requisito</th><th>Evidência</th></tr></thead><tbody>
+    <tr><td>APIM + Auth Serverless</td><td>APIM aplica JWT e roteia CPF à Azure Function; a Function valida CPF, consulta cliente ativo e emite JWT HMAC-SHA256.</td></tr>
+    <tr><td>Banco gerenciado</td><td>PostgreSQL Flexible Server 17 com subnet delegada, DNS privado, SSL e Key Vault.</td></tr>
+    <tr><td>Kubernetes escalável</td><td>AKS multi-AZ, Azure CNI, Workload Identity e HPA de 2 a 10 réplicas.</td></tr>
+    <tr><td>100% Terraform para infraestrutura</td><td>Os dois stacks de infraestrutura descrevem os recursos Azure obrigatórios de forma declarativa e têm pipelines de validação/aplicação.</td></tr>
+    <tr><td>Observabilidade</td><td>OpenTelemetry, Application Insights, Log Analytics, health checks, alertas e workbook operacional.</td></tr>
+    <tr><td>CI/CD dual-environment</td><td>Homologação em <code>develop</code>, Produção em <code>main</code>, OIDC e proteção de branch com PR/revisão/bloqueio de force-push.</td></tr>
+  </tbody></table>
+
+  <h1>7. Checklist final</h1>
+  <ul><li>Gerar PDF: <code>./scripts/generate-delivery-pdf.sh</code>.</li><li>Substituir a URL pendente do vídeo.</li><li>Conferir identificação e integrantes.</li><li>Validar links e anexar quatro provas de acesso.</li><li>Enviar o PDF único e a URL do vídeo no Portal do Aluno.</li></ul>
+</body>
+</html>
