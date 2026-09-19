@@ -1,0 +1,123 @@
+{
+  "info": {
+    "_postman_id": "5ad727fd-8da9-4aa1-963a-8e5d2f1866e4",
+    "name": "CatCar Platform — Fase 3 Tech Challenge",
+    "description": "Versioned Postman collection for the CatCar Platform public API. Set the environment values, authenticate as the appropriate actor, then execute the requests in dependency order. All protected requests send X-Correlation-Id for cross-service traceability.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "customerId", "value": "00000000-0000-0000-0000-000000000001", "type": "string" },
+    { "key": "vehicleId", "value": "00000000-0000-0000-0000-000000000002", "type": "string" },
+    { "key": "workOrderId", "value": "00000000-0000-0000-0000-000000000003", "type": "string" },
+    { "key": "budgetId", "value": "00000000-0000-0000-0000-000000000004", "type": "string" },
+    { "key": "serviceId", "value": "00000000-0000-0000-0000-000000000005", "type": "string" },
+    { "key": "itemId", "value": "00000000-0000-0000-0000-000000000006", "type": "string" },
+    { "key": "approvalToken", "value": "replace-with-customer-approval-token", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Customer CPF authentication",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["if (pm.response.code === 200) {", "  const body = pm.response.json();", "  pm.environment.set('customerToken', body.token);", "}"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"documentNumber\": \"529.982.247-25\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{apimUrl}}/api/auth/customer",
+            "description": "Authenticates an active customer with a valid CPF and saves the returned JWT in customerToken."
+          },
+          "response": []
+        },
+        {
+          "name": "Backoffice administrator or technician login",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["if (pm.response.code === 200) {", "  const body = pm.response.json();", "  pm.environment.set('adminToken', body.token);", "}"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@catcar.local\",\n  \"password\": \"ReplaceWithSecurePassword\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{apimUrl}}/api/v1/identity-access/auth/login",
+            "description": "Authenticates a backoffice user and saves the returned JWT in adminToken."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "ServiceOperations",
+      "item": [
+        {
+          "name": "Work Orders",
+          "item": [
+            { "name": "Open work order", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"initialDescription\": \"Brake inspection and scheduled maintenance\",\n  \"services\": [],\n  \"parts\": []\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/work-orders" }, "response": [] },
+            { "name": "List work orders", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/work-orders" }, "response": [] },
+            { "name": "Get work order by ID", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/work-orders/{{workOrderId}}" }, "response": [] },
+            { "name": "Get average execution time metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/work-orders/metrics/average-execution-time" }, "response": [] }
+          ]
+        },
+        {
+          "name": "Customers",
+          "item": [
+            { "name": "Create customer", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"document\": \"52998224725\",\n  \"name\": \"Maria da Silva\",\n  \"phone\": \"+5511999999999\",\n  \"email\": \"maria.silva@example.com\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/customers" }, "response": [] },
+            { "name": "Get customer by ID", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/customers/{{customerId}}" }, "response": [] }
+          ]
+        },
+        {
+          "name": "Vehicles",
+          "item": [
+            { "name": "Create vehicle", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"plate\": \"ABC1D23\",\n  \"brand\": \"Toyota\",\n  \"model\": \"Corolla\",\n  \"manufactureYear\": 2023\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/vehicles" }, "response": [] },
+            { "name": "Get vehicle by ID", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/vehicles/{{vehicleId}}" }, "response": [] }
+          ]
+        },
+        {
+          "name": "Budgets",
+          "item": [
+            { "name": "Create budget", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"workOrderId\": \"{{workOrderId}}\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/budgets" }, "response": [] },
+            { "name": "Get budget by ID", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/budgets/{{budgetId}}" }, "response": [] },
+            { "name": "Approve budget", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/budgets/{{budgetId}}/approve" }, "response": [] },
+            { "name": "Reject budget", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Customer requested a revised quote.\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/budgets/{{budgetId}}/reject" }, "response": [] }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CatalogInventory",
+      "item": [
+        {
+          "name": "Services",
+          "item": [
+            { "name": "Create catalog service", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Brake inspection\",\n  \"description\": \"Complete brake system inspection\",\n  \"estimatedDurationMinutes\": 60,\n  \"price\": 180.00\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/catalog-inventory/services" }, "response": [] },
+            { "name": "List catalog services", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/catalog-inventory/services" }, "response": [] }
+          ]
+        },
+        {
+          "name": "Inventory Items",
+          "item": [
+            { "name": "Create inventory item", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"sku\": \"BRK-PAD-001\",\n  \"name\": \"Brake pad set\",\n  \"description\": \"Front axle brake pad set\",\n  \"unitPrice\": 250.00,\n  \"initialQuantity\": 20,\n  \"minimumStockThreshold\": 5\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/catalog-inventory/items" }, "response": [] },
+            { "name": "List inventory items", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/catalog-inventory/items" }, "response": [] }
+          ]
+        },
+        {
+          "name": "Reservations",
+          "item": [
+            { "name": "List inventory reservations", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/catalog-inventory/reservations" }, "response": [] }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Communication",
+      "item": [
+        { "name": "Get approval token", "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/communication/tokens/{{approvalToken}}", "description": "Retrieves the customer-facing approval-token resource without exposing a JWT in the URL." }, "response": [] }
+      ]
+    },
+    {
+      "name": "Health & Observability",
+      "item": [
+        { "name": "Liveness health check", "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{baseUrl}}/health/live", "description": "Process liveness probe; does not depend on PostgreSQL." }, "response": [] },
+        { "name": "Readiness health check", "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{baseUrl}}/health/ready", "description": "Readiness probe including PostgreSQL connectivity." }, "response": [] }
+      ]
+    }
+  ]
+}

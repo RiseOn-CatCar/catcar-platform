@@ -360,6 +360,8 @@ All architectural decisions, Domain-Driven Design artifacts, RFC proposals, secu
 - [Authentication & Work Order Sequence Diagrams](docs/architecture/auth-sequence.md)
 - [Entity-Relationship (ER) Model](docs/architecture/er-model.md)
 - [Tech Challenge Phase Requirements (Fase 1-4)](docs/requirements/)
+- [Fase 3 Student Portal Delivery Document](docs/delivery/TECH_CHALLENGE_FASE_3_ENTREGA.md) and [print-ready HTML equivalent](docs/delivery/TECH_CHALLENGE_FASE_3_ENTREGA.html)
+- [CatCar Platform Postman Collection v2.1.0](docs/postman/CatCar_Platform.postman_collection.json) and [environment template](docs/postman/CatCar_Platform.postman_environment.json)
 ---
 
 ## Submodule Workflow & Contribution Guide

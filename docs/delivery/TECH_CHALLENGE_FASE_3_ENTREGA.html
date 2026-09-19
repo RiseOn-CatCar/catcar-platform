@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CatCar Platform — Tech Challenge Fase 3</title>
+  <style>
+    @page { size: A4; margin: 16mm 15mm 18mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { color: #172033; font: 10pt/1.48 Arial, Helvetica, sans-serif; margin: 0 auto; max-width: 900px; }
+    h1, h2, h3 { color: #172554; break-after: avoid; page-break-after: avoid; }
+    h1 { border-bottom: 2px solid #2563eb; font-size: 16pt; margin: 1.5em 0 .65em; padding-bottom: 5px; }
+    h2 { border-bottom: 1px solid #dbe3f0; font-size: 12pt; margin: 1.3em 0 .55em; padding-bottom: 3px; }
+    h3 { color: #1d4ed8; font-size: 10.5pt; margin: 1.1em 0 .45em; }
+    p, ul, ol { margin: 0 0 .75em; }
+    li { margin-bottom: .3em; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; break-inside: avoid; page-break-inside: avoid; font-size: 8.8pt; }
+    th, td { border: 1px solid #cbd5e1; padding: 6px 7px; vertical-align: top; text-align: left; }
+    th { background: #eff6ff; color: #172554; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    a { color: #1d4ed8; overflow-wrap: anywhere; text-decoration: none; }
+    code { background: #f1f5f9; border-radius: 2px; font: 8.5pt ui-monospace, SFMono-Regular, Consolas, monospace; padding: 1px 3px; }
+    .cover { align-items: center; display: flex; flex-direction: column; justify-content: center; min-height: 250mm; padding: 30mm 12px; text-align: center; break-after: page; page-break-after: always; }
+    .cover h1 { border: 0; font-size: 30pt; margin: 16px 0 10px; padding: 0; }
+    .cover .subtitle { color: #475569; font-size: 14pt; line-height: 1.5; margin: 0; }
+    .cover .meta { color: #475569; line-height: 1.7; margin-top: 72px; }
+    .tag { color: #1d4ed8; font-size: 9pt; font-weight: 700; letter-spacing: .08em; margin: 0; text-transform: uppercase; }
+    .section-intro { break-inside: avoid; page-break-inside: avoid; }
+    @media screen { body { padding: 18mm 15mm; } .cover { min-height: calc(297mm - 36mm); } }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <p class="tag">FIAP — SOAT Software Architecture Pós-Tech</p>
+    <h1>CatCar Platform</h1>
+    <p class="subtitle">Tech Challenge — Fase 3<br>Documento Consolidado de Entrega</p>
+    <p class="meta"><strong>Grupo:</strong> Grupo 274<br><strong>Integrante:</strong> Davi Holanda<br><strong>Turma / Curso:</strong> SOAT — Software Architecture Pós-Tech FIAP<br><strong>Data:</strong> 18 de setembro de 2026</p>
+  </section>
+
+  <h1>1. Identificação do grupo</h1>
+  <table><tbody>
+    <tr><th>Campo</th><th>Informação</th></tr>
+    <tr><td><strong>Nome do grupo</strong></td><td>Grupo 274</td></tr>
+    <tr><td><strong>Projeto</strong></td><td>CatCar Platform — Plataforma Integrada de Gestão de Oficina Mecânica</td></tr>
+    <tr><td><strong>Integrante</strong></td><td>Davi Holanda</td></tr>
+    <tr><td><strong>Turma / Curso</strong></td><td>SOAT — Software Architecture Pós-Tech FIAP</td></tr>
+  </tbody></table>
+
+  <h1>2. Repositórios entregues</h1>
+  <p>A solução é composta por um meta-repositório e quatro repositórios independentes, todos na organização <code>RiseOn-CatCar</code>:</p>
+  <table><thead><tr><th>Repositório</th><th>Responsabilidade</th></tr></thead><tbody>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-platform">catcar-platform</a></td><td>Meta-repositório, documentação consolidada, automação local e composição dos submódulos.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-app">catcar-app</a></td><td>Monólito modular .NET 10, DDD, EF Core, Wolverine Outbox e Aspire AppHost.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-auth-function">catcar-auth-function</a></td><td>Azure Function serverless para autenticação de cliente por CPF e emissão de JWT.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-database-infra">catcar-database-infra</a></td><td>Terraform para PostgreSQL Flexible Server, Key Vault, DNS privado e segredos.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-kubernetes-infra">catcar-kubernetes-infra</a></td><td>Terraform para VNet, AKS, ACR, APIM, Azure Monitor, alertas e workbooks.</td></tr>
+  </tbody></table>
+
+  <h1>3. Introdução: Organização do Repositório e Metodologia</h1>
+  <section class="section-intro">
+    <h2>Organização em Meta-Repositório (Umbrella Workspace)</h2>
+    <p>A plataforma é organizada como um <em>Umbrella Workspace</em>: o meta-repositório <code>catcar-platform</code> coordena quatro submódulos segregados e autônomos — <code>catcar-app</code>, <code>catcar-auth-function</code>, <code>catcar-database-infra</code> e <code>catcar-kubernetes-infra</code>. Cada submódulo mantém seu próprio ciclo de vida, histórico e pipeline de CI/CD, com responsabilidades claramente delimitadas entre a aplicação, a autenticação serverless e as duas camadas de infraestrutura.</p>
+    <p>Essa topologia reduz o acoplamento entre entregas, permite evolução e publicação independentes e limita o raio de impacto (<em>blast radius</em>) de alterações e incidentes. Ao mesmo tempo, a experiência de desenvolvimento permanece unificada: o <code>catcar-platform</code> concentra a documentação, o Makefile e a orquestração local por .NET Aspire, coordenando os componentes sem eliminar sua autonomia operacional.</p>
+    <h2>Metodologia e Papel da Inteligência Artificial</h2>
+    <p>A Inteligência Artificial foi empregada como multiplicação de mão de obra: um recurso para ampliar, acelerar e sistematizar a execução do trabalho de engenharia. Todos os conceitos arquiteturais, padrões de design e decisões técnicas foram originados diretamente do conhecimento arquitetural e da experiência de engenharia do autor, <strong>Davi Holanda</strong>.</p>
+    <p>A assistência de IA potencializou a materialização dessas decisões, sem substituir sua autoria técnica. Entre os elementos definidos pelo autor estão DDD, Vertical Slices, Transactional Outbox, autenticação serverless, topologia de nuvem, isolamento de rede Zero-Trust e credenciais federadas OIDC.</p>
+  </section>
+
+  <h1>4. Documentação e evidências técnicas</h1>
+  <h2>Arquitetura, DDD e decisões</h2>
+  <ul>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/cloud-components.md">Diagrama de componentes e topologia em nuvem</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/auth-sequence.md">Diagramas de sequência — autenticação e ordem de serviço</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/er-model.md">Modelo Entidade-Relacionamento (ER)</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/tree/main/docs/ddd">Artefatos DDD: visão geral</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/ddd/context-map.md">Context Map</a>, <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/ddd/event-storming.md">Event Storming</a>, <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/ddd/module-structure.md">estrutura de módulos</a> e <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/ddd/glossary.md">glossário</a></li>
+  </ul>
+  <h2>RFCs e ADRs</h2>
+  <ul>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/rfc/001-cloud-provider-selection.md">RFC 001 — seleção do provedor de nuvem (Microsoft Azure)</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/rfc/002-managed-database.md">RFC 002 — banco gerenciado PostgreSQL 17</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/rfc/003-serverless-auth.md">RFC 003 — autenticação serverless com Azure Functions</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/adr/001-asynchronous-communication-outbox.md">ADR 001 — comunicação assíncrona com Transactional Outbox</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/adr/002-hpa-and-apim-scaling.md">ADR 002 — HPA e rate limiting no APIM</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/adr/003-repository-topology.md">ADR 003 — topologia de repositórios e composição Aspire</a></li>
+  </ul>
+  <h2>Operação, segurança e APIs</h2>
+  <ul>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/azure-bootstrap.md">Runbook de bootstrap Azure</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/vulnerability-report.md">Relatório de vulnerabilidades</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/fase-3-audit-report.md">Relatório de auditoria e conformidade da Fase 3</a></li>
+    <li><a href="http://localhost:5000/swagger">Swagger UI — <code>/swagger</code></a></li>
+    <li><a href="http://localhost:5000/docs">Scalar API Reference — <code>/docs</code></a></li>
+    <li><a href="http://localhost:5000/openapi/v1.json">OpenAPI v3 JSON — <code>/openapi/v1.json</code></a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_collection.json">Collection Postman v2.1.0</a></li>
+    <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_environment.json">Environment template Postman</a></li>
+  </ul>
+
+  <h1>5. Acesso do avaliador <code>soat-architecture</code></h1>
+  <p><strong>Confirmação registrada:</strong> o controle de requisitos do projeto registra <code>soat-architecture</code> como colaborador com permissão de <em>push</em> nos quatro repositórios de entrega. A evidência rastreável está em <a href="https://github.com/RiseOn-CatCar/catcar-app/blob/main/docs/status-requisitos-entregaveis.md"><code>catcar-app/docs/status-requisitos-entregaveis.md</code></a>, item <code>F3-ENT-06</code>.</p>
+  <table><thead><tr><th>Repositório</th><th>Acesso a confirmar no GitHub</th><th>Evidência a anexar ao envio</th></tr></thead><tbody>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-app">catcar-app</a></td><td>Colaborador <code>soat-architecture</code> com acesso ativo.</td><td>Captura de tela de <strong>Settings → Collaborators and teams</strong> ou aceite de convite.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-auth-function">catcar-auth-function</a></td><td>Colaborador <code>soat-architecture</code> com acesso ativo.</td><td>Captura de tela de <strong>Settings → Collaborators and teams</strong> ou aceite de convite.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-database-infra">catcar-database-infra</a></td><td>Colaborador <code>soat-architecture</code> com acesso ativo.</td><td>Captura de tela de <strong>Settings → Collaborators and teams</strong> ou aceite de convite.</td></tr>
+    <tr><td><a href="https://github.com/RiseOn-CatCar/catcar-kubernetes-infra">catcar-kubernetes-infra</a></td><td>Colaborador <code>soat-architecture</code> com acesso ativo.</td><td>Captura de tela de <strong>Settings → Collaborators and teams</strong> ou aceite de convite.</td></tr>
+  </tbody></table>
+  <h2>Procedimento de comprovação antes da submissão</h2>
+  <ol>
+    <li>Um administrador da organização abre cada repositório e acessa <strong>Settings → Collaborators and teams</strong>.</li>
+    <li>Confirma que <code>soat-architecture</code> aparece como colaborador ativo — não apenas com convite pendente — com permissão mínima de leitura (o registro interno indica <em>push</em>).</li>
+    <li>Registra uma captura de tela por repositório, preservando o nome do repositório, o usuário e o status de acesso; não expõe tokens ou outros dados sensíveis.</li>
+    <li>Anexa as quatro evidências ao PDF final ou ao campo de observações do Portal do Aluno e mantém os repositórios acessíveis para a correção.</li>
+  </ol>
+
+  <h1>6. Resumo executivo de aderência aos requisitos obrigatórios</h1>
+  <table><thead><tr><th>Requisito obrigatório</th><th>Evidência de implementação</th></tr></thead><tbody>
+    <tr><td><strong>API Gateway + autenticação serverless</strong></td><td>Azure API Management aplica política JWT e roteia <code>POST /api/auth/customer</code> para a Azure Function. A Function valida CPF, consulta cliente ativo e emite JWT HMAC-SHA256.</td></tr>
+    <tr><td><strong>Banco de dados gerenciado</strong></td><td>Azure Database for PostgreSQL Flexible Server 17 com subnet delegada, DNS privado, SSL e segredos protegidos no Azure Key Vault.</td></tr>
+    <tr><td><strong>Kubernetes escalável</strong></td><td>AKS multi-AZ com Azure CNI, Workload Identity e HPA baseado em CPU/memória, configurado de 2 a 10 réplicas.</td></tr>
+    <tr><td><strong>Infraestrutura como código</strong></td><td>Os stacks <code>catcar-database-infra</code> e <code>catcar-kubernetes-infra</code> descrevem a infraestrutura Azure obrigatória integralmente em Terraform, com pipelines próprias de validação e aplicação.</td></tr>
+    <tr><td><strong>Observabilidade e workbooks</strong></td><td>OpenTelemetry, Application Insights, Log Analytics, health checks, alertas de latência/CPU/memória/uptime e workbook operacional permitem acompanhamento técnico e de negócio.</td></tr>
+    <tr><td><strong>CI/CD dual-environment e governança</strong></td><td>Pipelines independentes publicam Homologação a partir de <code>develop</code> e Produção a partir de <code>main</code>; o bootstrap configura OIDC, ambientes e proteção de branches com PR, revisão e bloqueio de force-push/exclusão.</td></tr>
+  </tbody></table>
+</body>
+</html>
