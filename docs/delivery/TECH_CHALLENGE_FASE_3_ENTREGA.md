@@ -1,9 +1,9 @@
 # Tech Challenge — Fase 3 | Documento Consolidado de Entrega
 
-> **Curso:** SOAT — Software Architecture Pós-Tech FIAP  
-> **Projeto:** CatCar Platform  
-> **Organização GitHub:** [RiseOn-CatCar](https://github.com/RiseOn-CatCar)  
-> **Versão do documento:** 18 de setembro de 2026
+**Curso:** SOAT — Software Architecture Pós-Tech FIAP  
+**Projeto:** CatCar Platform  
+**Organização GitHub:** [RiseOn-CatCar](https://github.com/RiseOn-CatCar)  
+**Versão do documento:** 18 de setembro de 2026
 
 ---
 
@@ -11,12 +11,10 @@
 
 | Campo | Informação |
 |---|---|
-| **Nome do grupo** | RiseOn-CatCar |
+| **Nome do grupo** | Grupo 274 |
 | **Projeto** | CatCar Platform — Plataforma Integrada de Gestão de Oficina Mecânica |
 | **Integrante** | Davi Holanda |
 | **Turma / Curso** | SOAT — Software Architecture Pós-Tech FIAP |
-
-> Antes do envio no Portal do Aluno, conferir se os dados de matrícula e eventuais demais integrantes estão completos na capa do PDF gerado a partir deste documento.
 
 ## 2. Repositórios entregues
 
@@ -30,28 +28,19 @@ A solução é composta por um meta-repositório e quatro repositórios independ
 | [catcar-database-infra](https://github.com/RiseOn-CatCar/catcar-database-infra) | Terraform para PostgreSQL Flexible Server, Key Vault, DNS privado e segredos. |
 | [catcar-kubernetes-infra](https://github.com/RiseOn-CatCar/catcar-kubernetes-infra) | Terraform para VNet, AKS, ACR, APIM, Azure Monitor, alertas e workbooks. |
 
-## 3. Demonstração em vídeo (até 15 minutos)
+## 3. Introdução: Organização do Repositório e Metodologia
 
-- **URL do vídeo (YouTube ou Vimeo, público ou não listado):** `PENDENTE — inserir URL publicada antes da submissão.`
-- **Duração máxima:** 15 minutos, conforme o enunciado.
-- **Ambiente de demonstração:** Homologação (`develop`) ou ambiente local Aspire/Kind equivalente, identificando claramente o ambiente utilizado.
+### Organização em Meta-Repositório (Umbrella Workspace)
 
-### Roteiro de apresentação — 15:00
+A plataforma é organizada como um *Umbrella Workspace*: o meta-repositório `catcar-platform` coordena quatro submódulos segregados e autônomos — `catcar-app`, `catcar-auth-function`, `catcar-database-infra` e `catcar-kubernetes-infra`. Cada submódulo mantém seu próprio ciclo de vida, histórico e pipeline de CI/CD, com responsabilidades claramente delimitadas entre a aplicação, a autenticação serverless e as duas camadas de infraestrutura.
 
-| Tempo | Demonstração e narrativa |
-|---:|---|
-| 00:00–00:45 | Apresentar o grupo, o problema de gestão de oficina e a topologia dos cinco repositórios. Exibir o diagrama de componentes em nuvem. |
-| 00:45–02:00 | Explicar o fluxo de borda: cliente → APIM → API no AKS ou Function de autenticação; apontar JWT, VNet e acesso privado aos dados. |
-| 02:00–03:30 | Executar `POST /api/auth/customer` com CPF válido pela coleção Postman. Exibir validação, resposta JWT de cliente e o `X-Correlation-Id`. Mostrar brevemente a rejeição de CPF inválido. |
-| 03:30–05:00 | Autenticar um Administrador/Técnico em `POST /api/v1/identity-access/auth/login`, demonstrando a separação entre token de cliente e token de backoffice. |
-| 05:00–06:45 | Consumir APIs protegidas: cadastrar/consultar cliente e veículo, abrir e consultar uma ordem de serviço e chamar a métrica de tempo médio. Mostrar os headers Authorization e correlação no Postman. |
-| 06:45–08:00 | Demonstrar catálogo/estoque e o fluxo de orçamento: serviço, item de inventário, criação/consulta e decisão de aprovação ou recusa. Explicar a comunicação assíncrona por Wolverine Outbox. |
-| 08:00–09:15 | Abrir a documentação interativa: Swagger (`/swagger`), Scalar (`/docs`) e OpenAPI (`/openapi/v1.json`); importar a collection e o environment Postman versionados. |
-| 09:15–11:00 | Exibir uma execução das pipelines CI/CD dos quatro repositórios: validação, testes/scans, build de imagem e etapas de infraestrutura/deploy. Destacar branches `develop` (Homologação) e `main` (Produção). |
-| 11:00–12:15 | Mostrar o deploy automatizado: recursos Terraform no Azure e workload no AKS com HPA de 2 a 10 réplicas; apontar o APIM e o ACR com RBAC `AcrPull`. |
-| 12:15–13:30 | Mostrar Azure Monitor/Application Insights: disponibilidade/health checks, latência, CPU, memória, alertas e workbook operacional. |
-| 13:30–14:30 | Filtrar logs estruturados e traces distribuídos pelo mesmo `CorrelationId`, conectando a chamada Postman ao APIM, Function/API e banco. |
-| 14:30–15:00 | Recapitular os requisitos atendidos, confirmar os links de evidência e informar onde se encontra este PDF/documento no repositório. |
+Essa topologia reduz o acoplamento entre entregas, permite evolução e publicação independentes e limita o raio de impacto (*blast radius*) de alterações e incidentes. Ao mesmo tempo, a experiência de desenvolvimento permanece unificada: o `catcar-platform` concentra a documentação, o Makefile e a orquestração local por .NET Aspire, coordenando os componentes sem eliminar sua autonomia operacional.
+
+### Metodologia e Papel da Inteligência Artificial
+
+A Inteligência Artificial foi empregada como multiplicação de mão de obra: um recurso para ampliar, acelerar e sistematizar a execução do trabalho de engenharia. Todos os conceitos arquiteturais, padrões de design e decisões técnicas foram originados diretamente do conhecimento arquitetural e da experiência de engenharia do autor, **Davi Holanda**.
+
+A assistência de IA potencializou a materialização dessas decisões, sem substituir sua autoria técnica. Entre os elementos definidos pelo autor estão DDD, Vertical Slices, Transactional Outbox, autenticação serverless, topologia de nuvem, isolamento de rede Zero-Trust e credenciais federadas OIDC.
 
 ## 4. Documentação e evidências técnicas
 
@@ -111,12 +100,3 @@ A solução é composta por um meta-repositório e quatro repositórios independ
 | **Infraestrutura como código** | Os stacks `catcar-database-infra` e `catcar-kubernetes-infra` descrevem a infraestrutura Azure obrigatória integralmente em Terraform, com pipelines próprias de validação e aplicação. |
 | **Observabilidade e workbooks** | OpenTelemetry, Application Insights, Log Analytics, health checks, alertas de latência/CPU/memória/uptime e workbook operacional permitem acompanhamento técnico e de negócio. |
 | **CI/CD dual-environment e governança** | Pipelines independentes publicam Homologação a partir de `develop` e Produção a partir de `main`; o bootstrap configura OIDC, ambientes e proteção de branches com PR, revisão e bloqueio de force-push/exclusão. |
-
-## 7. Checklist final do Portal do Aluno
-
-- [ ] Gerar o PDF deste documento: `./scripts/generate-delivery-pdf.sh`.
-- [ ] Substituir a URL pendente pelo link público ou não listado do vídeo de até 15 minutos.
-- [ ] Conferir identificação, integrantes e dados acadêmicos na capa do PDF.
-- [ ] Verificar que os cinco links de repositórios e todos os links de documentação abrem corretamente.
-- [ ] Anexar as quatro comprovações de acesso de `soat-architecture`.
-- [ ] Enviar o PDF único e a URL do vídeo no Portal do Aluno.
