@@ -1,0 +1,119 @@
+name: Cloud Runtime Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Runtime operation (start, stop, or status)'
+        required: true
+        default: 'status'
+        type: choice
+        options:
+          - start
+          - stop
+          - status
+  schedule:
+    # Nightly automatic stop at 02:00 UTC (never auto-start)
+    - cron: '0 2 * * *'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  runtime-control:
+    name: Azure Cloud Runtime Operations
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_DEPLOY_CLIENT_ID || vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Execute Runtime Operation
+        run: |
+          OPERATION="${{ github.event.inputs.operation || (github.event_name == 'schedule' && 'stop' || 'status') }}"
+          RESOURCE_GROUP="${{ vars.CATCAR_FOUNDATION_RESOURCE_GROUP || 'catcar-prod' }}"
+          POSTGRES_SERVER="${{ vars.CATCAR_POSTGRES_SERVER || 'psql-catcar-prod' }}"
+          AKS_CLUSTER="${{ vars.CATCAR_AKS_CLUSTER_NAME || 'aks-catcar-prod' }}"
+          SUB_HASH=$(echo -n "${{ vars.AZURE_SUBSCRIPTION_ID }}" | sha256sum | cut -d' ' -f1 | cut -c1-8)
+          APIM_NAME="${{ vars.APIM_NAME || format('apim-catcar-prod-{0}', SUB_HASH) }}"
+
+          echo "=== Executing operation: $OPERATION on $RESOURCE_GROUP ==="
+
+          case "$OPERATION" in
+            start)
+              echo "1. Starting PostgreSQL flexible server: $POSTGRES_SERVER..."
+              az postgres flexible-server start --resource-group "$RESOURCE_GROUP" --name "$POSTGRES_SERVER" --no-wait || true
+
+              echo "Waiting for PostgreSQL server to reach 'Ready' state..."
+              for i in {1..30}; do
+                PSQL_STATE=$(az postgres flexible-server show --resource-group "$RESOURCE_GROUP" --name "$POSTGRES_SERVER" --query "state" -o tsv 2>/dev/null || echo "Unknown")
+                echo "PostgreSQL state: $PSQL_STATE ($i/30)"
+                if [[ "$PSQL_STATE" == "Ready" ]]; then
+                  break
+                fi
+                sleep 10
+              done
+
+              echo "2. Starting AKS cluster: $AKS_CLUSTER..."
+              az aks start --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER" --no-wait || true
+
+              echo "Waiting for AKS cluster to reach 'Running' state..."
+              for i in {1..30}; do
+                AKS_POWER=$(az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER" --query "powerState.code" -o tsv 2>/dev/null || echo "Unknown")
+                echo "AKS power state: $AKS_POWER ($i/30)"
+                if [[ "$AKS_POWER" == "Running" ]]; then
+                  break
+                fi
+                sleep 10
+              done
+
+              echo "3. Verifying APIM readiness probe..."
+              APIM_HOST="${APIM_NAME}.azure-api.net"
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$APIM_HOST/api/health/ready" || echo "000")
+              echo "APIM readiness status: $STATUS"
+              ;;
+
+            stop)
+              echo "1. Stopping AKS cluster: $AKS_CLUSTER..."
+              az aks stop --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER" --no-wait || true
+
+              echo "Waiting for AKS cluster to reach 'Stopped' state..."
+              for i in {1..30}; do
+                AKS_POWER=$(az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER" --query "powerState.code" -o tsv 2>/dev/null || echo "Unknown")
+                echo "AKS power state: $AKS_POWER ($i/30)"
+                if [[ "$AKS_POWER" == "Stopped" ]]; then
+                  break
+                fi
+                sleep 10
+              done
+
+              echo "2. Stopping PostgreSQL flexible server: $POSTGRES_SERVER..."
+              az postgres flexible-server stop --resource-group "$RESOURCE_GROUP" --name "$POSTGRES_SERVER" --no-wait || true
+
+              echo "Waiting for PostgreSQL server to reach 'Stopped' state..."
+              for i in {1..30}; do
+                PSQL_STATE=$(az postgres flexible-server show --resource-group "$RESOURCE_GROUP" --name "$POSTGRES_SERVER" --query "state" -o tsv 2>/dev/null || echo "Unknown")
+                echo "PostgreSQL state: $PSQL_STATE ($i/30)"
+                if [[ "$PSQL_STATE" == "Stopped" ]]; then
+                  break
+                fi
+                sleep 10
+              done
+              echo "All compute resources successfully stopped."
+              ;;
+
+            status)
+              PSQL_STATE=$(az postgres flexible-server show --resource-group "$RESOURCE_GROUP" --name "$POSTGRES_SERVER" --query "state" -o tsv 2>/dev/null || echo "Unknown")
+              AKS_POWER=$(az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER" --query "powerState.code" -o tsv 2>/dev/null || echo "Unknown")
+              echo "=== Runtime Status Report ==="
+              echo "PostgreSQL ($POSTGRES_SERVER): $PSQL_STATE"
+              echo "AKS Cluster ($AKS_CLUSTER): $AKS_POWER"
+              ;;
+          esac

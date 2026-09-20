@@ -1,8 +1,8 @@
 # Azure Control-Plane Bootstrap Runbook
 
-`scripts/bootstrap-azure.sh` establishes the foundational Azure resources, Microsoft Entra ID (Azure AD) workload identities, RBAC role assignments, and GitHub Actions environments required by the CatCar CI/CD pipelines.
+`scripts/bootstrap-azure.sh` establishes the foundational Azure resources, Microsoft Entra ID (Azure AD) workload identities, RBAC role assignments, and GitHub Actions environment required by the CatCar CI/CD pipelines under the **academic cloud consolidation model**.
 
-It provisions control-plane prerequisites for **both Homologation (`develop`) and Production (`main`)** environments across all four segregated repositories (`catcar-app`, `catcar-auth-function`, `catcar-database-infra`, `catcar-kubernetes-infra`, plus `catcar-platform`). It does **not** deploy application workloads, clusters, databases, or API gateways directly; those are managed by Terraform and Aspire in the CI/CD pipelines.
+It provisions control-plane prerequisites for the **single Production environment (`main` / `catcar-prod`)** across all four segregated repositories (`catcar-app`, `catcar-auth-function`, `catcar-database-infra`, `catcar-kubernetes-infra`, plus `catcar-platform`). Local pre-production (homologation) is served entirely by the .NET Aspire AppHost (`make dev`).
 
 ---
 
@@ -12,9 +12,9 @@ Before running the bootstrap script, ensure the operator environment has:
 
 1. **CLI Tools Installed & Authenticated**:
    - `az` (Azure CLI): Authenticated to the target Azure subscription (`az login`).
-   - `gh` (GitHub CLI): Authenticated with permissions to manage variables, secrets, environments, and branch protection across the target repositories (`gh auth login`).
+   - `gh` (GitHub CLI): Authenticated with permissions to manage variables, secrets, environment, and branch protection across the target repositories (`gh auth login`).
    - `terraform` (`>= 1.5.0`): Used for foundation state validation and import.
-   - `sha256sum`: Standard utility to compute deterministic subscription hashes for storage account naming.
+   - `sha256sum`: Standard utility to compute deterministic subscription hashes for resource naming.
 2. **Operator Permissions**:
    - Azure: `Owner` or `User Access Administrator` + `Contributor` on the subscription (required to create resource groups, storage accounts, and assign RBAC roles).
    - Microsoft Entra ID: Permission to register applications and configure federated identity credentials (`Application Administrator` or `Cloud Application Administrator`).
@@ -28,7 +28,7 @@ Before running the bootstrap script, ensure the operator environment has:
 ## 2. Execution Flags & Syntax
 
 ```bash
-scripts/bootstrap-azure.sh [--dry-run | --apply] [--environment homologation|production|all]
+scripts/bootstrap-azure.sh [--dry-run | --apply]
                            [--env-file PATH] [--skip-branch-protection]
                            [--bootstrap-principal-object-id OBJECT_ID] [--bootstrap-principal-type TYPE]
 ```
@@ -39,9 +39,8 @@ scripts/bootstrap-azure.sh [--dry-run | --apply] [--environment homologation|pro
 |---|---|---|---|
 | `--dry-run` | `-` | *Default* | Simulates actions, displays planned configurations and federated credentials without mutating Azure or GitHub. |
 | `--apply` | `-` | | Applies resource creation, federated credential generation, GitHub secret/variable injection, and branch protection. |
-| `--environment` | `-e` | `all` | Target environment to configure: `homologation`, `production`, or `all`. |
 | `--env-file` | `-f` | `.env` (if present) | Path to local environment file containing variables and secrets. |
-| `--skip-branch-protection` | `-` | `false` | Skips applying branch protection rules on `main` and `develop`. |
+| `--skip-branch-protection` | `-` | `false` | Skips applying branch protection rules on `main`. |
 | `--bootstrap-principal-object-id` | `-` | *Signed-in user* | Microsoft Entra Object ID of the operator running the script to grant state storage access. |
 | `--bootstrap-principal-type` | `-` | `User` | Principal type: `User`, `ServicePrincipal`, `Group`, or `ForeignGroup`. |
 | `--help` | `-h` | | Displays the usage menu and required environment variables. |
@@ -51,195 +50,86 @@ scripts/bootstrap-azure.sh [--dry-run | --apply] [--environment homologation|pro
 ## 3. Configuration & Secrets Management (.env & Auto-Generation)
 
 The bootstrap script supports multiple convenient ways to provide required configuration:
-1. **Automatic Secret Generation (Recommended for initial setup)**: If database passwords or JWT signing keys are omitted, the script automatically generates cryptographically secure passwords (meeting Azure PostgreSQL complexity rules) and 256-bit hex keys, persisting them to your local `.env` file with permissions `0600`.
-2. **Environment File (`.env`)**: You can create a local `.env` file from the provided [`.env-sample`](../.env-sample) template (`cp .env-sample .env`). The `.env` file is excluded from Git via `.gitignore`.
+1. **Automatic Secret Generation**: If database passwords, JWT signing keys, or the Gateway Backend Key are omitted, the script automatically generates cryptographically secure passwords (meeting Azure PostgreSQL complexity rules) and 256-bit hex keys, persisting them to your local `.env` file with permissions `0600`.
+2. **Environment File (`.env`)**: You can create a local `.env` file from the provided [`.env-sample`](../.env-sample) template (`cp .env-sample .env`).
 3. **Shell Environment Variables**: You can export variables directly in your terminal session before execution.
-
-### Sample Configuration Template (`.env-sample`):
-```bash
-# Copy template:
-cp .env-sample .env
-
-# Edit APIM publisher metadata and optional overrides:
-# APIM_PUBLISHER_NAME="CatCar Operations"
-# APIM_PUBLISHER_EMAIL="operations@catcar.com"
-```
 
 ### Core Variables:
 ```bash
-APIM_PUBLISHER_NAME="CatCar Workshop Operations"
+APIM_PUBLISHER_NAME="CatCar Operations"
 APIM_PUBLISHER_EMAIL="operations@catcar.com"
 POSTGRES_ADMIN_PASSWORD=""          # Leave empty to auto-generate (min 12 chars)
 POSTGRES_AUTH_READONLY_PASSWORD="" # Leave empty to auto-generate (min 12 chars)
 JWT_SECRET=""                      # Leave empty to auto-generate 256-bit key (min 32 chars)
 CUSTOMER_JWT_SIGNING_KEY=""        # Leave empty to auto-generate 256-bit key (min 32 chars)
-```
-If distinct credentials are used between Homologation and Production, provide environment-specific overrides:
-```bash
-# Homologation overrides:
-export POSTGRES_ADMIN_PASSWORD_HOMOLOG="HomologAdminPassword123!"
-export POSTGRES_AUTH_READONLY_PASSWORD_HOMOLOG="HomologReadonlyPassword123!"
-export JWT_SECRET_HOMOLOG="HomologJwtSecretKeyHere32CharactersMin!"
-export CUSTOMER_JWT_SIGNING_KEY_HOMOLOG="HomologCustomerJwtSigningKeyHere32Min!"
-export FOUNDATION_RESOURCE_GROUP_HOMOLOG="rg-catcar-homolog"
-
-# Production overrides:
-export POSTGRES_ADMIN_PASSWORD_PROD="ProdAdminPassword123!"
-export POSTGRES_AUTH_READONLY_PASSWORD_PROD="ProdReadonlyPassword123!"
-export JWT_SECRET_PROD="ProdJwtSecretKeyHere32CharactersMin!"
-export CUSTOMER_JWT_SIGNING_KEY_PROD="ProdCustomerJwtSigningKeyHere32Min!"
-export FOUNDATION_RESOURCE_GROUP_PROD="CatCar"
-
-# Target repositories (defaults to all 4 submodules):
-# export REPOSITORIES="catcar-app catcar-auth-function catcar-database-infra catcar-kubernetes-infra"
+GATEWAY_BACKEND_KEY=""             # Leave empty to auto-generate 256-bit key (min 32 chars)
 ```
 
 ---
 
 ## 4. Resulting Infrastructure & Architecture Topology
 
-For each targeted environment, `bootstrap-azure.sh` provisions and binds the following cloud components:
+Under the academic consolidation model, `bootstrap-azure.sh` provisions and binds the following control-plane components:
 
 ### 4.1 Resource Groups & Storage Backends
 
 ```
 +-------------------------------------------------------------------------------------------------------+
 |                                    Azure Subscription & Tenant                                        |
-+---------------------------------------------------+---------------------------------------------------+
-|               HOMOLOGATION (homolog)              |                PRODUCTION (prod)                  |
-+---------------------------------------------------+---------------------------------------------------+
-| Foundation RG:  rg-catcar-homolog                 | Foundation RG:  CatCar                            |
-| Workloads RG:   rg-catcar-workloads-homolog       | Workloads RG:   rg-catcar-workloads-prod          |
-| State RG:       rg-catcar-tfstate-homolog         | State RG:       rg-catcar-tfstate-prod            |
-| Storage Account:stcatcarhomolog<hash:0:8>         | Storage Account:stcatcarprod<hash:0:8>            |
-| Blob Container: tfstate (private, Entra-only)     | Blob Container: tfstate (private, Entra-only)     |
-+---------------------------------------------------+---------------------------------------------------+
++-------------------------------------------------------------------------------------------------------+
+|                                        PRODUCTION (prod)                                              |
++-------------------------------------------------------------------------------------------------------+
+| Resource Group: catcar-prod                                                                          |
+| State Resource Group: catcar-tfstate                                                                  |
+| Storage Account: stcatcartf<sub_suffix>                                                               |
+| State Container: tfstate (private, Entra-only, TLS 1.2+)                                              |
++-------------------------------------------------------------------------------------------------------+
 ```
 
-* **State Security**: Storage accounts enforce HTTPS-only (TLS 1.2+), disabled public blob access, disabled shared keys, and Entra ID RBAC authorization (`use_azuread_auth=true`). The bootstrap keeps the storage account public endpoint enabled, so network isolation remains public-endpoint-based unless private networking is added separately.
+* **State Isolation**: Storage account `stcatcartf<sub_suffix>` lives in `catcar-tfstate`, outside `catcar-prod`, ensuring that teardown or re-creation of production workloads never deletes state storage.
+* **Canonical Naming**:
+  - ACR: `catcarprod<sub_suffix>` (Basic SKU)
+  - Key Vault: `kv-catcar-prod-<sub_suffix>` (Standard SKU)
+  - APIM: `apim-catcar-prod-<sub_suffix>` (Consumption SKU)
+  - Auth Function: `func-catcar-prod-<sub_suffix>` (Flex Consumption FC1)
+  - API Public IP DNS: `catcar-api-prod-<sub_suffix>`
+  - AKS Cluster: `aks-catcar-prod` (Free SKU, Standard_B2s, 1-2 nodes)
+  - PostgreSQL: `psql-catcar-prod` (B_Standard_B1ms, 32 GiB, private VNet)
 
 ---
 
-### 4.2 Microsoft Entra ID Workload Identity & Federated Credentials (OIDC)
+### 4.2 Microsoft Entra ID Workload Identities & OIDC Federated Credentials
 
-The script establishes passwordless, keyless OpenID Connect (OIDC) integration between GitHub Actions and Microsoft Entra ID:
+`bootstrap-azure.sh` sets up two dedicated Entra ID Workload Identities:
 
-| App Registration | Roles & Scopes | Federated Credentials (Subjects) Configured |
-|---|---|---|
-| **`catcar-github-terraform-plan`** (Shared Plan Identity) | `Reader` on `/subscriptions/<id>`<br>`Storage Blob Data Contributor` on state storage accounts | For each repository (`catcar-app`, `catcar-auth-function`, `catcar-database-infra`, `catcar-kubernetes-infra`):<br>• `repo:<org>/<repo>:pull_request`<br>• `repo:<org>/<repo>:ref:refs/heads/main`<br>• `repo:<org>/<repo>:ref:refs/heads/develop` |
-| **`catcar-github-homolog-deploy`** (Homologation Deploy) | `Contributor` on `rg-catcar-homolog`<br>`User Access Administrator` on `rg-catcar-homolog`<br>`AKS RBAC Cluster Admin` on `rg-catcar-homolog`<br>`Contributor` on `rg-catcar-workloads-homolog`<br>`AcrPush` on `rg-catcar-homolog`<br>`Key Vault Secrets Officer` on `rg-catcar-homolog`<br>`Storage Blob Data Contributor` on homolog state | For each repository:<br>• `repo:<org>/<repo>:environment:homologation`<br>• `repo:<org>/<repo>:ref:refs/heads/develop` |
-| **`catcar-github-production-deploy`** (Production Deploy) | `Contributor` on `CatCar`<br>`User Access Administrator` on `CatCar`<br>`AKS RBAC Cluster Admin` on `CatCar`<br>`Contributor` on `rg-catcar-workloads-prod`<br>`AcrPush` on `CatCar`<br>`Key Vault Secrets Officer` on `CatCar`<br>`Storage Blob Data Contributor` on prod state | For each repository:<br>• `repo:<org>/<repo>:environment:production`<br>• `repo:<org>/<repo>:ref:refs/heads/main` |
-
----
-
-### 4.3 Multi-Repository GitHub Configurations
-
-The script iterates through all target repositories and populates variables, secrets, and branch policies:
-
-#### 1. Repository-Level Variables:
-* `AZURE_CLIENT_ID`: Application ID for `catcar-github-terraform-plan`.
-* `AZURE_TENANT_ID`: Microsoft Entra tenant ID.
-* `AZURE_SUBSCRIPTION_ID`: Azure subscription ID.
-* `AZURE_LOCATION`: Azure deployment region (e.g. `brazilsouth`).
-* `CATCAR_FOUNDATION_RESOURCE_GROUP`: Default foundation resource group name when a single environment is bootstrapped.
-* `APIM_PUBLISHER_NAME`: Organization name for API Management.
-* `APIM_PUBLISHER_EMAIL`: Operations contact email.
-* `AZURE_TF_STATE_RG`: Default state backend resource group when a single environment is bootstrapped.
-* `AZURE_TF_STATE_STORAGE_ACCOUNT`: Default state storage account name when a single environment is bootstrapped.
-
-#### 2. Automated Branch Protection Rules (`main` and `develop`):
-Unless `--skip-branch-protection` is specified, the script automatically configures branch protection via GitHub REST API (`PUT /repos/{owner}/{repo}/branches/{branch}/protection`):
-* **Required Pull Request Reviews**: At least 1 approving review required before merge.
-* **Dismiss Stale Approvals**: New commits dismiss previous approvals.
-* **Direct Pushes Prohibited**: All changes must merge through Pull Requests.
-* **Force Pushes Prohibited**: `allow_force_pushes = false`.
-* **Branch Deletion Prohibited**: `allow_deletions = false`.
-
-#### 3. Environment-Scoped Configurations (`homologation` & `production`):
-* **Environment Variables**:
-  * `AZURE_DEPLOY_CLIENT_ID`: Dedicated deploy application ID (`catcar-github-homolog-deploy` or `catcar-github-production-deploy`).
-  * `CATCAR_FOUNDATION_RESOURCE_GROUP`: `rg-catcar-homolog` or `CatCar`.
-  * `ASPIRE_WORKLOAD_RESOURCE_GROUP`: `rg-catcar-workloads-homolog` or `rg-catcar-workloads-prod`.
-  * `TF_BACKEND_RESOURCE_GROUP`: State resource group.
-  * `TF_BACKEND_STORAGE_ACCOUNT`: State storage account name.
-  * `TF_BACKEND_CONTAINER`: `tfstate`.
-  * `AZURE_TF_STATE_RG`: State resource group for Terraform init.
-  * `AZURE_TF_STATE_STORAGE_ACCOUNT`: State storage account name for Terraform init.
-  * `AZURE_LOCATION`: Azure region.
-  * `APIM_PUBLISHER_NAME` & `APIM_PUBLISHER_EMAIL`.
-  * `CATCAR_AKS_CLUSTER_NAME`: `aks-catcar-homolog` or `aks-catcar-prod`.
-  * `ACR_NAME`: `crccarhomolog` or `crccarprod`.
-  * `KEY_VAULT_NAME`: `kv-catcar-homolog` or `kv-catcar-prod`.
-  * `CATCAR_LOG_ANALYTICS_WORKSPACE_NAME`: `log-catcar-homolog` or `log-catcar-prod`.
-  * `CATCAR_APPLICATION_INSIGHTS_NAME`: `appi-catcar-homolog` or `appi-catcar-prod`.
-* **Environment Secrets**:
-  * `POSTGRES_ADMIN_PASSWORD`
-  * `POSTGRES_AUTH_READONLY_PASSWORD`
-  * `JWT_SECRET`
-  * `CUSTOMER_JWT_SIGNING_KEY`
-  * When `--environment all` is used and the per-environment JWT overrides are unset, the script generates distinct `JWT_SECRET_HOMOLOG` / `JWT_SECRET_PROD` and `CUSTOMER_JWT_SIGNING_KEY_HOMOLOG` / `CUSTOMER_JWT_SIGNING_KEY_PROD` values before persisting the effective configuration.
+1. **Shared Plan Identity (`catcar-github-terraform-plan`)**:
+   - **Role Assignments**: `Reader` on Subscription level, `Storage Blob Data Contributor` on `catcar-tfstate`.
+   - **Federated Credentials**:
+     - `gh-<repo_slug>-pr`: `repo:<owner>/<repo>:pull_request`
+     - `gh-<repo_slug>-main`: `repo:<owner>/<repo>:ref:refs/heads/main`
+2. **Production Deploy Identity (`catcar-github-production-deploy`)**:
+   - **Role Assignments**: `Contributor`, `User Access Administrator`, `Azure Kubernetes Service RBAC Cluster Admin`, `AcrPush`, and `Key Vault Secrets Officer` on `catcar-prod`; `Storage Blob Data Contributor` on `catcar-tfstate`.
+   - **Federated Credentials**:
+     - `gh-<repo_slug>-prod-env`: `repo:<owner>/<repo>:environment:production`
 
 ---
 
-## 5. Step-by-Step Execution Examples
+## 5. Security & Public/Private Endpoint Trade-Offs
 
-### Scenario A: Dry-run preview of both environments
-```bash
-./scripts/bootstrap-azure.sh --dry-run
-```
-Outputs the planned resources, storage accounts, Entra applications, federated credential subjects, GitHub variables, and branch protection rules without making changes.
-
-### Scenario B: Provision Homologation only
-```bash
-export APIM_PUBLISHER_NAME="CatCar Operations"
-export APIM_PUBLISHER_EMAIL="ops@catcar.com"
-export POSTGRES_ADMIN_PASSWORD="HomologPassword123!"
-export POSTGRES_AUTH_READONLY_PASSWORD="HomologReadonly123!"
-export JWT_SECRET="HomologSecretKey32CharsMinRequirement!"
-export CUSTOMER_JWT_SIGNING_KEY="HomologCustomerSigningKey32CharsMin!"
-
-./scripts/bootstrap-azure.sh --apply --environment homologation
-```
-
-### Scenario C: Provision Production only
-```bash
-export APIM_PUBLISHER_NAME="CatCar Operations"
-export APIM_PUBLISHER_EMAIL="ops@catcar.com"
-export POSTGRES_ADMIN_PASSWORD="ProductionSecurePassword123!"
-export POSTGRES_AUTH_READONLY_PASSWORD="ProductionReadonly123!"
-export JWT_SECRET="ProductionSecretKey32CharsMinRequirement!"
-export CUSTOMER_JWT_SIGNING_KEY="ProductionCustomerSigningKey32CharsMin!"
-
-./scripts/bootstrap-azure.sh --apply --environment production
-```
-
-### Scenario D: Provision both Homologation and Production in one pass
-```bash
-export APIM_PUBLISHER_NAME="CatCar Operations"
-export APIM_PUBLISHER_EMAIL="ops@catcar.com"
-export POSTGRES_ADMIN_PASSWORD="DefaultSecurePassword123!"
-export POSTGRES_AUTH_READONLY_PASSWORD="DefaultReadonly123!"
-export JWT_SECRET="DefaultSecretKey32CharsMinRequirement!"
-export CUSTOMER_JWT_SIGNING_KEY="DefaultCustomerSigningKey32CharsMin!"
-
-./scripts/bootstrap-azure.sh --apply --environment all
-```
+To operate strictly within a **USD 100 total Azure student credit**:
+- **PostgreSQL Flexible Server** remains private inside `snet-postgresql` (`10.20.2.0/24`) with `public_network_access_enabled = false` and private DNS `private.postgres.database.azure.com`.
+- **Key Vault, ACR, and API Ingress** use public service endpoints + Entra ID OIDC / RBAC / Gateway Key authentication because student budget constraints reject Premium/private-endpoint SKUs.
+- **Gateway Key Protection**: APIM injects `X-CatCar-Gateway-Key` on all backend calls. Origin workloads (API and Auth Function) return 403 Forbidden in Production for any POST request missing or carrying an invalid key. Health probes and static GET pages are exempt.
+- **Cold-by-Default Infrastructure**: Compute resources (AKS and PostgreSQL) are stopped nightly at 02:00 UTC via `.github/workflows/cloud-runtime.yml` and started on demand via `workflow_dispatch` or deployment workflows.
 
 ---
 
-## 6. Post-Bootstrap Governance Checklist
+## 6. Dated Pricing Basis (Azure Retail Prices API)
 
-After running `--apply`:
-
-1. **Branch Protection Rules (Configured Automatically)**:
-   - Verified that `main` and `develop` require Pull Request review with at least 1 approval.
-   - Verified that direct pushes to `main` and `develop` are blocked.
-2. **GitHub Environment Reviewers**:
-   - In GitHub repository settings (`Settings -> Environments -> production`), configure:
-     - **Required reviewers**: Add designated leads to approve production deployments before rollout.
-     - **Deployment branches**: Ensure restricted to `refs/heads/main`.
-   - In `Settings -> Environments -> homologation`:
-     - **Deployment branches**: Ensure restricted to `refs/heads/develop`.
-3. **Trigger Pipelines**:
-   - Pushing to `develop` executes automatic deployment to Homologation.
-   - Merging a PR into `main` executes automatic deployment to Production.
+*Pricing query date: September 2026 (East US)*:
+- **AKS (Free Tier)**: USD 0.00/month cluster management fee. Node compute: 1–2 x `Standard_B2s` (Linux) @ USD 0.0416/hour.
+- **PostgreSQL Flexible Server (`B_Standard_B1ms`)**: USD 0.017/hour + 32 GiB storage @ USD 0.115/GB/month (~USD 16.00/month if 24/7; < USD 4.00/month with scheduled suspension).
+- **ACR (Basic SKU)**: USD 0.1666/day (~USD 5.00/month).
+- **APIM (Consumption SKU)**: USD 0.00 for first 1,000,000 requests/month.
+- **Azure Function (Flex Consumption FC1)**: USD 0.00 for first 250,000 GB-s execution/month (scales to zero).
+- **Scheduled Suspension**: Nightly stop via `cloud-runtime.yml` preserves the USD 100 student credit for academic evaluation.

@@ -1,46 +1,44 @@
-# ADR 003: Multi-Repository Topology and Aspire Submodule Composition
+# ADR 003: Multi-Repository Topology, Academic Cloud Consolidation, and Aspire Submodule Composition
 
-- **Status:** Accepted
-- **Date:** 2026-09-18
+- **Status:** Accepted (Updated for Academic Cloud Consolidation)
+- **Date:** 2026-09-18 (Updated 2026-09-20)
 
 ## Context
 
-The Phase 3 Tech Challenge specifications require splitting the CatCar system into four segregated, independently deployable Git repositories:
+The CatCar platform is organized into four segregated, independently deployable Git repositories coordinated by `catcar-platform`:
 1. Serverless Authentication Function (`catcar-auth-function`)
 2. Kubernetes & Observability Infrastructure (`catcar-kubernetes-infra`)
 3. Managed Database & Secrets Infrastructure (`catcar-database-infra`)
 4. Main Modular Monolith Application & Aspire AppHost (`catcar-app`)
 
-Each repository must have an autonomous CI/CD pipeline targeting both **Homologation** (branch `develop`) and **Production** (branch `main`). At the same time, local developer experience (inner loop) must continue to run the complete solution—API, PostgreSQL database, Azurite storage emulator, and Serverless Auth Function—using .NET Aspire with a single command (`dotnet run --project src/Host/CatCar.AppHost`).
+Under the **Academic Cloud Consolidation Model**, CatCar replaces duplicated long-lived Azure environments with a single Production environment (`catcar-prod`) and utilizes the existing .NET Aspire AppHost as the standard pre-production (homologation) environment (`make dev`). The cloud target must stretch a total USD 100 Azure student credit while preserving Phase 3 functionality (APIM, serverless CPF authentication, managed PostgreSQL, AKS/HPA, resource requests/limits, monitoring, and automated deployment).
 
 ## Decision
 
-1. **Repository Segregation & History Preservation**:
-   - The primary monorepo was renamed to `catcar-app`, preserving full Git commit history for core application domain slices, tests, and Aspire configuration.
-   - Dedicated repositories `catcar-auth-function`, `catcar-kubernetes-infra`, and `catcar-database-infra` were created by extracting relevant path histories using `git filter-repo`.
+1. **Trunk-Based Development & Production Tag Release**:
+   - Protected branch `main` is the single source of truth across all five repositories.
+   - Production deployment is triggered exclusively by stable SemVer release tags (`v*.*.*`) whose commits are reachable from `main`.
+   - The `develop` branch and duplicated homologation cloud topology are decommissioned. Local Aspire is the primary homologation path (`make dev`).
 
-2. **Decoupled Infrastructure Pipelines**:
-   - `catcar-kubernetes-infra` manages the foundational Azure VNet, AKS cluster, ACR, API Management (APIM), and Azure Monitor alert rules and workbooks.
-   - `catcar-database-infra` provisions Azure Database for PostgreSQL Flexible Server, Azure Key Vault, and private endpoints. It dynamically resolves the private endpoint subnet (`snet-private-endpoints`) via Terraform `data "azurerm_subnet"` lookup, eliminating tight cross-stack output variable bindings.
+2. **Decoupled Infrastructure & Multi-Repo Release Order**:
+   - `catcar-kubernetes-infra` provisions the VNet (`vnet-catcar-prod`), AKS cluster (`aks-catcar-prod`, Free SKU, Standard_B2s 1–2 nodes), ACR (`catcarprod<suffix>`, Basic SKU), APIM (`apim-catcar-prod-<suffix>`, Consumption SKU), and Azure Monitor alert rules.
+   - `catcar-database-infra` provisions Azure Database for PostgreSQL Flexible Server 17 (`psql-catcar-prod`, B1ms, private VNet) and Key Vault (`kv-catcar-prod-<suffix>`, Standard, public endpoint enabled for OIDC runners).
+   - `catcar-auth-function` provisions its Flex Consumption Function App (`func-catcar-prod-<suffix>`, FC1, 512 MiB, VNet integrated) via dedicated `infra/` Terraform.
+   - Deployment sequence: Kubernetes Infra -> Database Infra -> Auth Function -> API Workload.
 
-3. **Aspire Dual-Mode Orchestration via Pinned Git Submodule**:
-   - The `catcar-auth-function` repository is linked into `catcar-app` under `external/catcar-auth-function` as a pinned Git submodule.
-   - In **Run Mode** (`isRunMode`), Aspire AppHost registers the function via the path overload:
-     `builder.AddAzureFunctionsProject("auth-function", "../../../external/catcar-auth-function/src/CatCar.AuthFunction/CatCar.AuthFunction.csproj")`.
-     This provides unified local debugging without MSBuild `<ProjectReference>` compilation coupling or SDK type generation.
-   - In **Publish Mode** (`isPublishMode`), Aspire models only the Kubernetes API container workloads and external connection strings, while Azure Container Apps deployment for the Auth Function is managed strictly by its own CI/CD pipeline.
+3. **Aspire Local Composition & Ingress Gateway Key Boundary**:
+   - Local inner loop runs the full topology (`api`, `postgres`, `auth-storage`, `auth-function`) using .NET Aspire AppHost (`dotnet run --project src/Host/CatCar.AppHost`).
+   - In Production, APIM injects `X-CatCar-Gateway-Key` on all backend requests. Origin workloads (API and Auth Function) reject POST requests missing or carrying an invalid key with HTTP 403 Forbidden. Health probes (`/health/live`, `/health/ready`) are exempt.
 
-4. **Branching & Environments**:
-   - Protected branches `main` (Production environment) and `develop` (Homologation environment) are enforced across all four repositories with required pull request reviews and status checks.
+4. **Cold-by-Default Operations**:
+   - Compute workloads (AKS and PostgreSQL) are automatically stopped nightly at 02:00 UTC via `.github/workflows/cloud-runtime.yml` to preserve student credit, and started on demand via `workflow_dispatch` or deployment workflows.
+
+5. **Public / Private Endpoint Trade-Offs**:
+   - PostgreSQL remains private via VNet subnet delegation (`snet-postgresql`) and private DNS (`private.postgres.database.azure.com`).
+   - ACR, Key Vault, and API Ingress use public service endpoints + Entra ID OIDC / RBAC / Gateway Key authentication because student budget constraints reject Premium/private-endpoint SKUs.
 
 ## Consequences
 
-- **Independent Life Cycles**: Infrastructure, serverless authentication, and application services deploy independently without cascading deployment dependencies.
-- **Inner Loop Integrity**: Local development remains unified with zero extra setup overhead; developers clone with `--recurse-submodules` and run Aspire normally.
-- **Loose Coupling**: Cross-repo references are limited to published language contracts (`IIntegrationEvent`), standard HTTP/JWT protocols, and runtime environment configuration.
-
-## Alternatives Considered
-
-- **Package-based ServiceDefaults (NuGet)**: Rejected because duplicating the lightweight `CatCar.ServiceDefaults` across repositories avoids premature packaging overhead and internal feed maintenance.
-- **Monorepo with Path Filtering**: Rejected as non-compliant with the explicit Phase 3 architectural requirement demanding four segregated GitHub repositories.
-- **Direct HTTP Mocking for Local Function**: Rejected because local Aspire execution with real isolated worker runtime provides higher fidelity for end-to-end integration testing.
+- **Cost Efficiency**: Total cloud spend easily fits within the USD 100 student credit without sacrificing architecture, security, or observability.
+- **Trunk-Based Velocity**: Developers merge to `main` via PRs and release production via tagged commits without managing dual cloud environments.
+- **High Inner Loop Fidelity**: Aspire orchestrates local PostgreSQL, API, and Auth Function with zero cloud dependencies.
