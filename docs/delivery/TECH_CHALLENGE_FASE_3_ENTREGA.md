@@ -66,11 +66,16 @@ A assistência de IA potencializou a materialização dessas decisões, sem subs
 - [Runbook de bootstrap Azure](https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/azure-bootstrap.md)
 - [Relatório de vulnerabilidades](https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/vulnerability-report.md)
 - [Relatório de auditoria e conformidade da Fase 3](https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/fase-3-audit-report.md)
-- [Swagger UI — `/swagger`](http://localhost:5000/swagger)
-- [Scalar API Reference — `/docs`](http://localhost:5000/docs)
-- [OpenAPI v3 JSON — `/openapi/v1.json`](http://localhost:5000/openapi/v1.json)
+- **API modular (`catcar-app`) — Scalar:** [http://localhost:5000/docs](http://localhost:5000/docs)
+- **API modular (`catcar-app`) — OpenAPI v3 JSON:** [http://localhost:5000/openapi/v1.json](http://localhost:5000/openapi/v1.json)
+- **Customer Auth Function — Swagger UI:** [http://localhost:7071/api/swagger/ui](http://localhost:7071/api/swagger/ui)
+- **Customer Auth Function — OpenAPI v3 JSON:** [http://localhost:7071/api/openapi/v3.json](http://localhost:7071/api/openapi/v3.json)
 - [Collection Postman v2.1.0](https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_collection.json)
 - [Environment template Postman](https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_environment.json)
+
+The modular API document covers only the `/api/v1/*` contexts. The public
+`POST /api/auth/customer` route is owned and documented by the independent
+Azure Function.
 
 ## 5. Acesso do avaliador `soat-architecture`
 

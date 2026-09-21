@@ -89,12 +89,14 @@
     <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/azure-bootstrap.md">Runbook de bootstrap Azure</a></li>
     <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/vulnerability-report.md">Relatório de vulnerabilidades</a></li>
     <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/fase-3-audit-report.md">Relatório de auditoria e conformidade da Fase 3</a></li>
-    <li><a href="http://localhost:5000/swagger">Swagger UI — <code>/swagger</code></a></li>
-    <li><a href="http://localhost:5000/docs">Scalar API Reference — <code>/docs</code></a></li>
-    <li><a href="http://localhost:5000/openapi/v1.json">OpenAPI v3 JSON — <code>/openapi/v1.json</code></a></li>
+    <li><strong>API modular (<code>catcar-app</code>) — Scalar:</strong> <a href="http://localhost:5000/docs">http://localhost:5000/docs</a></li>
+    <li><strong>API modular (<code>catcar-app</code>) — OpenAPI v3 JSON:</strong> <a href="http://localhost:5000/openapi/v1.json">http://localhost:5000/openapi/v1.json</a></li>
+    <li><strong>Customer Auth Function — Swagger UI:</strong> <a href="http://localhost:7071/api/swagger/ui">http://localhost:7071/api/swagger/ui</a></li>
+    <li><strong>Customer Auth Function — OpenAPI v3 JSON:</strong> <a href="http://localhost:7071/api/openapi/v3.json">http://localhost:7071/api/openapi/v3.json</a></li>
     <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_collection.json">Collection Postman v2.1.0</a></li>
     <li><a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_environment.json">Environment template Postman</a></li>
   </ul>
+  <p>A documentação da API modular cobre somente os contextos <code>/api/v1/*</code>. A rota pública <code>POST /api/auth/customer</code> pertence à Azure Function independente.</p>
 
   <h1>5. Acesso do avaliador <code>soat-architecture</code></h1>
   <p><strong>Confirmação registrada:</strong> o controle de requisitos do projeto registra <code>soat-architecture</code> como colaborador com permissão de <em>push</em> nos quatro repositórios de entrega. A evidência rastreável está em <a href="https://github.com/RiseOn-CatCar/catcar-app/blob/main/docs/status-requisitos-entregaveis.md"><code>catcar-app/docs/status-requisitos-entregaveis.md</code></a>, item <code>F3-ENT-06</code>.</p>

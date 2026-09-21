@@ -99,11 +99,14 @@ Entregar a documentação arquitetural completa, contendo:
 
 ### README.md (em cada repositório):
 
-●  Descrição clara do propósito.
-●  Tecnologias utilizadas.
-●  Passos para execução e deploy.
-●  Diagrama da arquitetura específica daquele repositório.
-●  Link para o Swagger/Postman das APIs.
+● Descrição clara do propósito.
+● Tecnologias utilizadas.
+● Passos para execução e deploy.
+● Diagrama da arquitetura específica daquele repositório.
+● Link para a documentação da API publicada por aquele repositório:
+  ○ `catcar-app`: Scalar `/docs` e OpenAPI `/openapi/v1.json`.
+  ○ `catcar-auth-function`: Swagger UI `/api/swagger/ui` e OpenAPI `/api/openapi/v3.json`.
+● A coleção Postman deve manter o boundary público `POST /api/auth/customer`.
 
 ### Vídeo de demonstração:
 
