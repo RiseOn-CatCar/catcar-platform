@@ -55,4 +55,5 @@ git-sync:
 
 restore:
 	dotnet restore catcar-app/CatCar.slnx
+	dotnet restore catcar-auth-function/src/CatCar.AuthFunction/CatCar.AuthFunction.csproj
 	dotnet restore catcar-auth-function/CatCar.AuthFunction.slnx
