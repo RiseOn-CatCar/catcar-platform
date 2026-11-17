@@ -4,6 +4,8 @@
 - **Date:** 2026-09-16
 - **Decision owners:** CatCar architecture team
 
+> Release cadence and secret handling have since been superseded by the [coordinated release process](../../release-process.md): component CI is independent, but Azure deployment is coordinated by platform tags.
+
 ## Context
 
 Customer authentication has bursty traffic and a sharply bounded responsibility: accept a CPF through the gateway, validate it against the customer record in PostgreSQL, and issue a signed JWT containing the customer's identity. It needs an independently deployable release cadence without coupling authentication to the AKS workload image.

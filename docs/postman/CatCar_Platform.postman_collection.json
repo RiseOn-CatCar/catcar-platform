@@ -2,121 +2,117 @@
   "info": {
     "_postman_id": "5ad727fd-8da9-4aa1-963a-8e5d2f1866e4",
     "name": "CatCar Platform — Fase 3 Tech Challenge",
-    "description": "Versioned Postman collection for the CatCar Platform public API. Set the environment values, authenticate as the appropriate actor, then execute the requests in dependency order. All protected requests send X-Correlation-Id for cross-service traceability.",
+    "description": "Run folders in order. Set unique, valid synthetic CPFs, an unused plate and SKU, and a real controlled test mailbox. apiBaseUrl and authBaseUrl are origins without /api. healthBaseUrl is the local API origin, or apiBaseUrl + /api for APIM. Copy each one-time link from the mailbox into Postman Vault as approvalTokenA or approvalTokenB; never export or log it. Run the approval and rejection folders separately after receiving each email. JWTs and IDs are held in collection variables for this session; clear them after use. The missing-claim test requires a valid signed Customer token without customer_id or name identifier, supplied in Vault as customerTokenWithoutClaim; it tests the API directly because APIM rejects such a token before forwarding it.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "variable": [
-    { "key": "customerId", "value": "00000000-0000-0000-0000-000000000001", "type": "string" },
-    { "key": "vehicleId", "value": "00000000-0000-0000-0000-000000000002", "type": "string" },
-    { "key": "workOrderId", "value": "00000000-0000-0000-0000-000000000003", "type": "string" },
-    { "key": "budgetId", "value": "00000000-0000-0000-0000-000000000004", "type": "string" },
-    { "key": "serviceId", "value": "00000000-0000-0000-0000-000000000005", "type": "string" },
-    { "key": "itemId", "value": "00000000-0000-0000-0000-000000000006", "type": "string" },
-    { "key": "approvalToken", "value": "replace-with-customer-approval-token", "type": "string" }
+  "event": [
+    { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.variables.set('correlationId', pm.variables.replaceIn('{{$guid}}'));"] } }
   ],
   "item": [
     {
-      "name": "Authentication",
+      "name": "1. Setup",
       "item": [
         {
-          "name": "Customer CPF authentication",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["if (pm.response.code === 200) {", "  const body = pm.response.json();", "  pm.environment.set('customerToken', body.token);", "}"] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }],
-            "body": { "mode": "raw", "raw": "{\n  \"documentNumber\": \"529.982.247-25\"\n}", "options": { "raw": { "language": "json" } } },
-            "url": "{{apimUrl}}/api/auth/customer",
-            "description": "Authenticates an active customer with a valid CPF and saves the returned JWT in customerToken."
-          },
-          "response": []
+          "name": "Login administrator",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Administrator login succeeds', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { const token = pm.response.json().accessToken; pm.test('accessToken returned', () => pm.expect(token).to.be.a('string').and.not.empty); pm.collectionVariables.set('adminToken', token); }"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/identity-access/auth/login", "body": { "mode": "raw", "raw": "{\"email\":\"{{adminEmail}}\",\"password\":\"{{adminPassword}}\"}" } }
         },
         {
-          "name": "Backoffice administrator or technician login",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["if (pm.response.code === 200) {", "  const body = pm.response.json();", "  pm.environment.set('adminToken', body.token);", "}"] } }],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }],
-            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@catcar.local\",\n  \"password\": \"ReplaceWithSecurePassword\"\n}", "options": { "raw": { "language": "json" } } },
-            "url": "{{apimUrl}}/api/v1/identity-access/auth/login",
-            "description": "Authenticates a backoffice user and saves the returned JWT in adminToken."
-          },
-          "response": []
+          "name": "Create service",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Service created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('serviceId', pm.response.json().id);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/catalog-inventory/services", "body": { "mode": "raw", "raw": "{\"name\":\"CatCar Smoke inspection\",\"description\":\"Smoke test inspection\",\"estimatedDurationMinutes\":60,\"price\":180}" } }
+        },
+        {
+          "name": "Create inventory item",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Item created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('itemId', pm.response.json().id);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/catalog-inventory/inventory-items", "body": { "mode": "raw", "raw": "{\"sku\":\"{{itemSku}}\",\"name\":\"CatCar Smoke part\",\"description\":\"Smoke test part\",\"unitPrice\":250,\"initialQuantity\":20,\"minimumStockThreshold\":5}" } }
+        },
+        {
+          "name": "Create customer A",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer A created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('customerIdA', pm.response.json().id);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/customers", "body": { "mode": "raw", "raw": "{\"document\":\"{{customerDocumentA}}\",\"name\":\"CatCar Smoke A\",\"phone\":\"+5511999999999\",\"email\":\"{{smokeCustomerEmail}}\"}" } }
+        },
+        {
+          "name": "Create customer B",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer B created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('customerIdB', pm.response.json().id);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/customers", "body": { "mode": "raw", "raw": "{\"document\":\"{{customerDocumentB}}\",\"name\":\"CatCar Smoke B\",\"phone\":\"+5511999999999\",\"email\":\"{{smokeCustomerEmail}}\"}" } }
+        },
+        {
+          "name": "Register vehicle A",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Vehicle created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('vehicleIdA', pm.response.json().id);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/vehicles", "body": { "mode": "raw", "raw": "{\"customerId\":\"{{customerIdA}}\",\"plate\":\"{{vehiclePlate}}\",\"brand\":\"Toyota\",\"model\":\"Corolla\",\"manufactureYear\":2023}" } }
+        },
+        {
+          "name": "Authenticate customer A",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer A authenticated', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { const token = pm.response.json().token; pm.test('token returned', () => pm.expect(token).to.be.a('string').and.not.empty); pm.collectionVariables.set('customerTokenA', token); }"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"{{customerDocumentA}}\"}" } }
+        },
+        {
+          "name": "Authenticate customer B",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer B authenticated', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { const token = pm.response.json().token; pm.test('token returned', () => pm.expect(token).to.be.a('string').and.not.empty); pm.collectionVariables.set('customerTokenB', token); }"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"{{customerDocumentB}}\"}" } }
         }
       ]
     },
     {
-      "name": "ServiceOperations",
+      "name": "2. Issue budget A",
       "item": [
         {
-          "name": "Work Orders",
-          "item": [
-            { "name": "Open work order", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"initialDescription\": \"Brake inspection and scheduled maintenance\",\n  \"services\": [],\n  \"parts\": []\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/work-orders" }, "response": [] },
-            { "name": "List work orders", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/work-orders" }, "response": [] },
-            { "name": "Get work order by ID", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/work-orders/{{workOrderId}}" }, "response": [] },
-            { "name": "Get average execution time metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/work-orders/metrics/average-execution-time" }, "response": [] }
-          ]
+          "name": "Open work order A",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Work order opened', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('workOrderIdA', pm.response.json().workOrderId);"] } }],
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders", "body": { "mode": "raw", "raw": "{\"customerId\":\"{{customerIdA}}\",\"vehicleId\":\"{{vehicleIdA}}\",\"initialDescription\":\"CatCar Smoke approval\",\"services\":[],\"parts\":[]}" } }
         },
-        {
-          "name": "Customers",
-          "item": [
-            { "name": "Create customer", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"document\": \"52998224725\",\n  \"name\": \"Maria da Silva\",\n  \"phone\": \"+5511999999999\",\n  \"email\": \"maria.silva@example.com\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/customers" }, "response": [] },
-            { "name": "Get customer by ID", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/customers/{{customerId}}" }, "response": [] }
-          ]
-        },
-        {
-          "name": "Vehicles",
-          "item": [
-            { "name": "Create vehicle", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"plate\": \"ABC1D23\",\n  \"brand\": \"Toyota\",\n  \"model\": \"Corolla\",\n  \"manufactureYear\": 2023\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/vehicles" }, "response": [] },
-            { "name": "Get vehicle by ID", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/vehicles/{{vehicleId}}" }, "response": [] }
-          ]
-        },
-        {
-          "name": "Budgets",
-          "item": [
-            { "name": "Create budget", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"workOrderId\": \"{{workOrderId}}\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/budgets" }, "response": [] },
-            { "name": "Get budget by ID", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/service-operations/budgets/{{budgetId}}" }, "response": [] },
-            { "name": "Approve budget", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/budgets/{{budgetId}}/approve" }, "response": [] },
-            { "name": "Reject budget", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Customer requested a revised quote.\"\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/service-operations/budgets/{{budgetId}}/reject" }, "response": [] }
-          ]
-        }
+        { "name": "Start diagnosis A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Diagnosis started', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/start-diagnosis" } },
+        { "name": "Add service A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Service added', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/services", "body": { "mode": "raw", "raw": "{\"catalogedServiceId\":\"{{serviceId}}\",\"quantity\":1}" } } },
+        { "name": "Add part A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Part added', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/parts", "body": { "mode": "raw", "raw": "{\"inventoryItemId\":\"{{itemId}}\",\"quantity\":1}" } } },
+        { "name": "Issue budget A once", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Budget issued', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('budgetIdA', pm.response.json().budgetId);"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/budget", "description": "Wait for the real email and save its raw link token to Vault as approvalTokenA before proceeding." } }
       ]
     },
     {
-      "name": "CatalogInventory",
+      "name": "3. Approve and finish A",
       "item": [
-        {
-          "name": "Services",
-          "item": [
-            { "name": "Create catalog service", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Brake inspection\",\n  \"description\": \"Complete brake system inspection\",\n  \"estimatedDurationMinutes\": 60,\n  \"price\": 180.00\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/catalog-inventory/services" }, "response": [] },
-            { "name": "List catalog services", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/catalog-inventory/services" }, "response": [] }
-          ]
-        },
-        {
-          "name": "Inventory Items",
-          "item": [
-            { "name": "Create inventory item", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "body": { "mode": "raw", "raw": "{\n  \"sku\": \"BRK-PAD-001\",\n  \"name\": \"Brake pad set\",\n  \"description\": \"Front axle brake pad set\",\n  \"unitPrice\": 250.00,\n  \"initialQuantity\": 20,\n  \"minimumStockThreshold\": 5\n}", "options": { "raw": { "language": "json" } } }, "url": "{{apimUrl}}/api/v1/catalog-inventory/items" }, "response": [] },
-            { "name": "List inventory items", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/catalog-inventory/items" }, "response": [] }
-          ]
-        },
-        {
-          "name": "Reservations",
-          "item": [
-            { "name": "List inventory reservations", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/catalog-inventory/reservations" }, "response": [] }
-          ]
-        }
+        { "name": "Approval details A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Link details available', () => pm.response.to.have.status(200));"] } }], "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenA}}" } },
+        { "name": "Approve A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Approval accepted', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { pm.collectionVariables.set('pollStartedAt', String(Date.now())); pm.test('Commercial approval does not start execution', () => { pm.expect(pm.response.json().budgetStatus).to.eql('Approved'); pm.expect(pm.response.json().workOrderStatus).to.eql('AwaitingApproval'); }); }"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenA}}/decision", "body": { "mode": "raw", "raw": "{\"approved\":true,\"reason\":null}" } } },
+        { "name": "Repeat decision A — single use", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Used token rejected', () => pm.response.to.have.status(400));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenA}}/decision", "body": { "mode": "raw", "raw": "{\"approved\":true,\"reason\":null}" } } },
+        { "name": "Poll progress A until execution", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Progress available', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) {", "  const status = pm.response.json().status;", "  if (status === 'InExecution') { pm.test('Inventory confirmed execution', () => pm.expect(status).to.eql('InExecution')); pm.collectionVariables.unset('pollStartedAt'); }", "  else if (status === 'AwaitingApproval' && Date.now() - Number(pm.collectionVariables.get('pollStartedAt')) < 120000) { postman.setNextRequest('Poll progress A until execution'); }", "  else { pm.test('Inventory confirmed within 120 seconds', () => pm.expect(status).to.eql('InExecution')); postman.setNextRequest(null); }", "} else { postman.setNextRequest(null); }"] } }], "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{customerTokenA}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/progress", "description": "Run in Collection Runner after approval; repeats until InExecution or 120 seconds. Failure stops the run before completion." } },
+        { "name": "Complete A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Work order completed', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/complete" } },
+        { "name": "Deliver A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Work order delivered', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/deliver" } }
       ]
     },
     {
-      "name": "Communication",
+      "name": "4. Issue separate rejection budget B",
       "item": [
-        { "name": "Get approval token", "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apimUrl}}/api/v1/communication/tokens/{{approvalToken}}", "description": "Retrieves the customer-facing approval-token resource without exposing a JWT in the URL." }, "response": [] }
+        { "name": "Open work order B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Second work order opened', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('workOrderIdB', pm.response.json().workOrderId);"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders", "body": { "mode": "raw", "raw": "{\"customerId\":\"{{customerIdA}}\",\"vehicleId\":\"{{vehicleIdA}}\",\"initialDescription\":\"CatCar Smoke rejection\",\"services\":[],\"parts\":[]}" } } },
+        { "name": "Start diagnosis B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Diagnosis started', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/start-diagnosis" } },
+        { "name": "Add service B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Service added', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/services", "body": { "mode": "raw", "raw": "{\"catalogedServiceId\":\"{{serviceId}}\",\"quantity\":1}" } } },
+        { "name": "Add part B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Part added', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/parts", "body": { "mode": "raw", "raw": "{\"inventoryItemId\":\"{{itemId}}\",\"quantity\":1}" } } },
+        { "name": "Issue budget B once", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Budget issued', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('budgetIdB', pm.response.json().budgetId);"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/budget", "description": "Wait for the second real email and save its raw link token to Vault as approvalTokenB." } }
       ]
     },
     {
-      "name": "Health & Observability",
+      "name": "5. Reject B",
       "item": [
-        { "name": "Liveness health check", "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{baseUrl}}/health/live", "description": "Process liveness probe; does not depend on PostgreSQL." }, "response": [] },
-        { "name": "Readiness health check", "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{baseUrl}}/health/ready", "description": "Readiness probe including PostgreSQL connectivity." }, "response": [] }
+        { "name": "Approval details B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Link details available', () => pm.response.to.have.status(200));"] } }], "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenB}}" } },
+        { "name": "Reject B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Rejection accepted', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenB}}/decision", "body": { "mode": "raw", "raw": "{\"approved\":false,\"reason\":\"Customer declined the proposal.\"}" } } }
+      ]
+    },
+    {
+      "name": "6. Negative cases",
+      "item": [
+        { "name": "Invalid CPF", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Invalid CPF rejected', () => pm.response.to.have.status(400));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"00000000000\"}" } } },
+        { "name": "Valid CPF not registered", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Unknown customer rejected', () => pm.response.to.have.status(404));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"{{unregisteredCustomerDocument}}\"}" }, "description": "Supply a valid synthetic CPF known not to be registered." } },
+        { "name": "Customer B cannot see A progress", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Different owner receives 404', () => { pm.response.to.have.status(404); pm.expect(pm.response.json().detail).to.eql('Work order not found.'); });"] } }], "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{customerTokenB}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/progress" } },
+        { "name": "Missing customer claim forbidden", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Missing customer identity forbidden', () => pm.response.to.have.status(403));"] } }], "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{$vault:customerTokenWithoutClaim}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{directApiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/progress", "description": "Direct API only: use a valid signed Customer token with neither customer_id nor name identifier. APIM intentionally rejects this token earlier." } },
+        { "name": "Deactivate customer B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer deactivated', () => pm.response.to.have.status(200));"] } }], "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/customers/{{customerIdB}}/status", "body": { "mode": "raw", "raw": "{\"isActive\":false}" } } },
+        { "name": "Inactive customer authentication", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Inactive customer rejected', () => pm.response.to.have.status(403));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"{{customerDocumentB}}\"}" } } }
+      ]
+    },
+    {
+      "name": "7. Health and metrics",
+      "item": [
+        { "name": "Liveness", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Live', () => pm.response.to.have.status(200));"] } }], "request": { "method": "GET", "url": "{{healthBaseUrl}}/health/live" } },
+        { "name": "Readiness", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Ready', () => pm.response.to.have.status(200));"] } }], "request": { "method": "GET", "url": "{{healthBaseUrl}}/health/ready" } },
+        { "name": "Average execution time", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Metrics available', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) pm.test('Stage averages are numbers or null', () => { const m = pm.response.json(); ['averageDiagnosisTimeHours','averageExecutionTimeHours','averageFinalizationTimeHours'].forEach(k => pm.expect(m[k] === null || typeof m[k] === 'number', k).to.be.true); });"] } }], "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/metrics/average-execution-time", "description": "Stage averages are null when no complete history is observed; null is not zero." } }
       ]
     }
   ]

@@ -5,7 +5,20 @@ CLUSTER_NAME="catcar"
 REG_NAME="kind-registry"
 REG_PORT="5001"
 REG_IMAGE="registry:3"
-KIND_CONFIG="${KIND_CONFIG:-kind-config.yaml}"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+KIND_CONFIG="${KIND_CONFIG:-${ROOT_DIR}/kind-config.yaml}"
+
+# Kind changes the current context on cluster creation. Restore the caller's
+# selection even when provisioning fails; all kubectl operations below are explicit.
+previous_context="$(kubectl config current-context 2>/dev/null || true)"
+restore_context() {
+  if [[ -n "$previous_context" ]]; then
+    kubectl config use-context "$previous_context" >/dev/null 2>&1 || true
+  else
+    kubectl config unset current-context >/dev/null 2>&1 || true
+  fi
+}
+trap restore_context EXIT
 
 # 1. Create registry container unless it already exists
 if [ "$(docker inspect -f '{{.State.Running}}' "${REG_NAME}" 2>/dev/null || true)" != 'true' ]; then

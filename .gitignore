@@ -15,3 +15,6 @@ Desktop.ini
 .env.*
 !.env-sample
 !.env.example
+
+# Local Kind validation output (never release evidence)
+/artifacts/

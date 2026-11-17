@@ -7,8 +7,3 @@ containerdConfigPatches:
     config_path = "/etc/containerd/certs.d"
 nodes:
 - role: control-plane
-  extraPortMappings:
-  - containerPort: 30080
-    hostPort: 8080
-    listenAddress: "127.0.0.1"
-    protocol: TCP
