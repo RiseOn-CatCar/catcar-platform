@@ -17,7 +17,10 @@ metadata="$ROOT_DIR/artifacts/release-build.json"
 components=(catcar-app catcar-auth-function catcar-database-infra catcar-kubernetes-infra)
 platform_sha=$(git rev-parse HEAD)
 [[ -z ${GITHUB_SHA:-} || $platform_sha == "$GITHUB_SHA" ]] || { echo 'Platform SHA does not match GITHUB_SHA' >&2; exit 1; }
-[[ -z $(git status --porcelain --untracked-files=normal -- . ':(exclude)artifacts') ]] || { echo 'Platform checkout is dirty' >&2; exit 1; }
+# Scanner actions drop untracked helper files in the workspace; only tracked drift matters after the build phase.
+untracked=normal
+[[ $phase == build ]] || untracked=no
+[[ -z $(git status --porcelain --untracked-files="$untracked" -- . ':(exclude)artifacts') ]] || { echo 'Platform checkout is dirty' >&2; exit 1; }
 declare -A shas
 for component in "${components[@]}"; do
   expected=$(git ls-tree "$platform_sha" -- "$component" | awk '$1 == "160000" && $2 == "commit" {print $3}')
