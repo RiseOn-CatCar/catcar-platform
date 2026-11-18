@@ -1,14 +1,16 @@
 # Coordinated release process
 
-`main` is the permanent trunk. Short-lived feature and `release/*` branches merge by pull request; component repositories run CI but do not deploy. Only a platform tag matching `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$` can initiate Azure deployment. The tagged platform commit and every pinned component commit must be ancestors of their respective `origin/main`. Local dirty Kind evidence is never release evidence.
+`main` is the permanent trunk. Short-lived feature and `release/*` branches merge by pull request; component repositories run CI but do not deploy. Only a platform tag matching `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$` can initiate Azure deployment. The tagged platform commit and every pinned component commit must be ancestors of their respective `origin/main`. Kind is local-only; its evidence is never release evidence, even from a clean checkout.
 
-Before creating a tag, run `make kind-up` and `make kind-validate`, review the result and ensure the platform gitlinks reference component commits with successful required push-to-main checks. CI repeats integration and Kind validation and scans the exact images that are promoted. Azure uses one GitHub Environment, `azure`, and the four separate Terraform states described in the [bootstrap guide](azure-bootstrap.md). No bootstrap or release is authorized merely by changing this repository.
+For coordinated component changes, PR-head mode allows platform PR validation against component PR head commits and their successful required checks. This is review evidence only: merge the component PRs, repin the platform to the resulting component `main` commits, and ensure those exact gitlinks have successful required push-to-main checks before tagging a platform commit on `main`. PR-head validation does not authorize a release.
+
+CI runs pinned integration including E2E, builds release images, and applies Trivy scanning to the images selected for promotion; Azure promotes the CI-produced images by digest without rebuilding. `make kind-up` and `make kind-validate` are optional local development checks and are not run in CI or required for release. Azure uses one GitHub Environment, `azure`, and the four separate Terraform states described in the [bootstrap guide](azure-bootstrap.md). No bootstrap or release is authorized merely by changing this repository.
 
 ## GitHub protections
 
 After the first successful runs, configure required pull requests and strict required status checks on `main`, enforcing the rules for administrators with no bypass, force pushes or deletion. Set required approving reviews to zero. Apply equivalent protection to `release/**`. Required checks are:
 
-- Platform: `Component Checks`, `Pinned Integration`, `Kind Validation`.
+- Platform: `Component Checks`, `Pinned Integration`, `Release Images`; E2E and Trivy must also pass as part of the CI gates.
 - Application: `Build & Test`, `Opengrep SAST Scan`, `Security Scan`, `Docker Build & Scan`, `Validate Aspire Publish Model`.
 - Authentication: `build-and-test`, `validate-infra`.
 - Database: `validate`.

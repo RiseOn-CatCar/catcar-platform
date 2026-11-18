@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/artifacts/kind-images" "$TMP/artifacts/kind-evidence" "$TMP/fake/catcar-app/scripts"
+mkdir -p "$TMP/bin" "$TMP/artifacts/release-images" "$TMP/artifacts/release-evidence" "$TMP/fake/catcar-app/scripts"
 export PATH="$TMP/bin:$PATH" TEST_TMP="$TMP"
 cat > "$TMP/bin/git" <<'SH'
 #!/usr/bin/env bash
@@ -35,17 +35,17 @@ export GITHUB_SHA; GITHUB_SHA=$(printf '%040d' 1)
 mkdir -p "$TMP/docker" "$TMP/oci/blobs/sha256"
 printf '{"architecture":"amd64","os":"linux"}' > "$TMP/docker/config.json"
 jq -n '[{Config:"config.json",RepoTags:["localhost:5001/catcar-api:test"],Layers:[]}]' > "$TMP/docker/manifest.json"
-tar -cf "$TMP/artifacts/kind-images/api.tar" -C "$TMP/docker" manifest.json config.json
+tar -cf "$TMP/artifacts/release-images/api.tar" -C "$TMP/docker" manifest.json config.json
 config_hex=$(sha256sum "$TMP/docker/config.json"); config_hex=${config_hex%% *}
 cp "$TMP/docker/config.json" "$TMP/oci/blobs/sha256/$config_hex"
 jq -n --arg digest "sha256:$config_hex" '{schemaVersion:2,config:{mediaType:"application/vnd.oci.image.config.v1+json",digest:$digest},layers:[]}' > "$TMP/oci/manifest"
 manifest_hex=$(sha256sum "$TMP/oci/manifest"); manifest_hex=${manifest_hex%% *}
 mv "$TMP/oci/manifest" "$TMP/oci/blobs/sha256/$manifest_hex"
 jq -n --arg digest "sha256:$manifest_hex" '{schemaVersion:2,manifests:[{mediaType:"application/vnd.oci.image.manifest.v1+json",digest:$digest}]}' > "$TMP/oci/index.json"
-tar -cf "$TMP/artifacts/kind-images/auth-function.tar" -C "$TMP/oci" index.json blobs
-(cd "$TMP/artifacts/kind-images" && sha256sum api.tar auth-function.tar > SHA256SUMS)
+tar -cf "$TMP/artifacts/release-images/auth-function.tar" -C "$TMP/oci" index.json blobs
+(cd "$TMP/artifacts/release-images" && sha256sum api.tar auth-function.tar > SHA256SUMS)
 id="sha256:$(printf '%064d' 1)"
-jq -n --arg sha "$GITHUB_SHA" --arg id "$id" --arg config "sha256:$config_hex" '{dirty:false,platformSha:$sha,componentShas:{"catcar-app":$sha,"catcar-auth-function":$sha,"catcar-database-infra":$sha,"catcar-kubernetes-infra":$sha},imageIds:{api:$id,authFunction:$id},imageConfigDigests:{api:$config,authFunction:$config},checks:{smoke:true}}' > "$TMP/artifacts/kind-evidence/validation.json"
+jq -n --arg sha "$GITHUB_SHA" --arg config "sha256:$config_hex" '{dirty:false,platformSha:$sha,componentShas:{"catcar-app":$sha,"catcar-auth-function":$sha,"catcar-database-infra":$sha,"catcar-kubernetes-infra":$sha},imageConfigDigests:{api:$config,authFunction:$config},checks:{componentChecks:true,pinnedIntegration:true,trivy:true}}' > "$TMP/artifacts/release-evidence/release-evidence.json"
 expect_failure() {
   local label=$1 pattern=$2; shift 2
   if "$@" > "$TMP/out" 2>&1; then echo "FAIL $label: unexpectedly succeeded" >&2; exit 1; fi
@@ -56,14 +56,56 @@ expect_failure missing-env POSTGRES_ADMIN_PASSWORD env -u POSTGRES_ADMIN_PASSWOR
 expect_failure bad-phase 'Invalid or missing phase' bash "$ROOT/scripts/deploy-azure.sh" --phase invalid --artifacts-dir "$TMP/artifacts" --check
 bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check >/dev/null
 echo 'PASS offline preflight'
-jq '.dirty=true' "$TMP/artifacts/kind-evidence/validation.json" > "$TMP/dirty"; mv "$TMP/dirty" "$TMP/artifacts/kind-evidence/validation.json"
+bash -c 'source "$1"; ARTIFACTS="$TEST_TMP/artifacts"; manifest_init; jq -e --slurpfile evidence "$ARTIFACTS/release-evidence/release-evidence.json" ".gitlinks == \$evidence[0].componentShas and .imageConfigDigests == \$evidence[0].imageConfigDigests and (has(\"imageIds\") | not)" "$ARTIFACTS/release-manifest.json" >/dev/null' _ "$ROOT/scripts/deploy-azure.sh"
+echo 'PASS release manifest initialization'
+jq '.dirty=true' "$TMP/artifacts/release-evidence/release-evidence.json" > "$TMP/dirty"; mv "$TMP/dirty" "$TMP/artifacts/release-evidence/release-evidence.json"
 expect_failure dirty 'Invalid, dirty' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
-jq '.dirty=false' "$TMP/artifacts/kind-evidence/validation.json" > "$TMP/clean"; mv "$TMP/clean" "$TMP/artifacts/kind-evidence/validation.json"
-jq 'del(.imageConfigDigests.api)' "$TMP/artifacts/kind-evidence/validation.json" > "$TMP/missing"; cp "$TMP/artifacts/kind-evidence/validation.json" "$TMP/original"; cp "$TMP/missing" "$TMP/artifacts/kind-evidence/validation.json"
+jq '.dirty=false' "$TMP/artifacts/release-evidence/release-evidence.json" > "$TMP/clean"; mv "$TMP/clean" "$TMP/artifacts/release-evidence/release-evidence.json"
+cp "$TMP/artifacts/release-evidence/release-evidence.json" "$TMP/original"
+for check in componentChecks pinnedIntegration trivy; do
+  jq --arg check "$check" 'del(.checks[$check])' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
+  expect_failure "missing-$check" 'required checks' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
+  jq --arg check "$check" '.checks[$check]=false' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
+  expect_failure "failed-$check" 'required checks' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
+done
+jq 'del(.imageConfigDigests.api)' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
 expect_failure missing-config imageConfigDigests bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
-jq --arg wrong "$id" '.imageConfigDigests.api=$wrong' "$TMP/original" > "$TMP/artifacts/kind-evidence/validation.json"
+jq --arg wrong "$id" '.imageConfigDigests.api=$wrong' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
 expect_failure archive-config-mismatch 'Image config digest mismatch' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
-cp "$TMP/original" "$TMP/artifacts/kind-evidence/validation.json"
+jq --arg wrong "$id" '.imageConfigDigests.authFunction=$wrong' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
+expect_failure oci-config-mismatch 'Image config digest mismatch' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
+jq '.platformSha="wrong"' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
+expect_failure platform-sha 'Invalid, dirty' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
+jq '.componentShas["catcar-app"]="wrong"' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
+expect_failure component-sha 'gitlink mismatch' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
+cp "$TMP/original" "$TMP/artifacts/release-evidence/release-evidence.json"
+expect_failure github-sha 'Checkout does not match GITHUB_SHA' env GITHUB_SHA=wrong bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
+cp "$TMP/artifacts/release-images/SHA256SUMS" "$TMP/sums"
+head -n 1 "$TMP/sums" > "$TMP/artifacts/release-images/SHA256SUMS"
+expect_failure incomplete-checksums 'Invalid image archive checksum manifest' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
+cp "$TMP/sums" "$TMP/artifacts/release-images/SHA256SUMS"
+printf 'changed' >> "$TMP/artifacts/release-images/api.tar"
+expect_failure bad-checksum 'Image archive checksum mismatch' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
+tar -cf "$TMP/artifacts/release-images/api.tar" -C "$TMP/docker" manifest.json config.json
+cat > "$TMP/publish-test.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+source "$1"
+ARTIFACTS="$TEST_TMP/artifacts" TMP_DIR="$TEST_TMP" ACR=test ACR_SERVER=test.azurecr.io
+az() { if [[ $1 == acr && $2 == repository ]]; then printf 'sha256:%064d\n' 1; fi; }
+docker() {
+  if [[ $1 == buildx ]]; then
+    jq -n --arg digest "$ACR_CONFIG" '{config:{digest:$digest}}'
+  fi
+}
+manifest_update() { :; }
+publish_images
+SH
+ACR_CONFIG="sha256:$config_hex" bash "$TMP/publish-test.sh" "$ROOT/scripts/deploy-azure.sh"
+expect_failure acr-config-mismatch 'Image config digest mismatch' env ACR_CONFIG="$id" bash "$TMP/publish-test.sh" "$ROOT/scripts/deploy-azure.sh"
+printf 'tampered' > "$TMP/oci/blobs/sha256/$config_hex"
+tar -cf "$TMP/tampered-oci.tar" -C "$TMP/oci" index.json blobs
+expect_failure tampered-oci 'OCI config blob digest mismatch' bash -c 'source "$1"; image_archive_config_digest "$2"' _ "$ROOT/scripts/lib/image-digests.sh" "$TMP/tampered-oci.tar"
 expect_failure digest 'Image config digest mismatch' bash -c 'source "$1"; verify_image_id sha256:bad sha256:expected api' _ "$ROOT/scripts/deploy-azure.sh"
 expect_failure pending 'queues are not drained' env SQL_RESULT='public.wolverine_incoming_envelopes|3' bash -c 'source "$1"; drain' _ "$ROOT/scripts/deploy-azure.sh"
 expect_failure sql 'Wolverine drain SQL failed' env SQL_FAIL=1 bash -c 'source "$1"; drain' _ "$ROOT/scripts/deploy-azure.sh"

@@ -4,6 +4,7 @@ set +x
 umask 077
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/scripts/lib/image-digests.sh"
 cd "$ROOT_DIR"
 
 # LocalKubernetes chart contract: keep chart-specific names and values together.
@@ -147,44 +148,8 @@ registry_config() {
 }
 docker save -o "$tmp/api.tar" "$API_TAG"
 docker save -o "$tmp/auth-function.tar" "$AUTH_TAG"
-archive_config() {
-  python3 - "$1" <<'PY'
-import hashlib
-import json
-import sys
-import tarfile
-
-with tarfile.open(sys.argv[1]) as tar:
-    def read(name):
-        member = tar.extractfile(name)
-        if member is None:
-            raise ValueError(f"Missing archive member {name}")
-        return member.read()
-
-    try:
-        entries = json.loads(read("manifest.json"))
-        if len(entries) != 1:
-            raise ValueError("Expected exactly one archived image")
-        config = read(entries[0]["Config"])
-    except KeyError:
-        index = json.loads(read("index.json"))
-        manifests = index["manifests"]
-        if len(manifests) != 1:
-            raise ValueError("Expected exactly one OCI manifest")
-        descriptor = manifests[0]["digest"]
-        raw = read("blobs/sha256/" + descriptor.removeprefix("sha256:"))
-        if "sha256:" + hashlib.sha256(raw).hexdigest() != descriptor:
-            raise ValueError("OCI manifest digest mismatch")
-        manifest = json.loads(raw)
-        digest = manifest["config"]["digest"]
-        config = read("blobs/sha256/" + digest.removeprefix("sha256:"))
-        if "sha256:" + hashlib.sha256(config).hexdigest() != digest:
-            raise ValueError("OCI config digest mismatch")
-    print("sha256:" + hashlib.sha256(config).hexdigest())
-PY
-}
-api_config=$(archive_config "$tmp/api.tar")
-auth_config=$(archive_config "$tmp/auth-function.tar")
+api_config=$(image_archive_config_digest "$tmp/api.tar")
+auth_config=$(image_archive_config_digest "$tmp/auth-function.tar")
 [[ $(registry_config catcar-api "${api_image##*@}") == "$api_config" ]] || { echo "API archive and registry config differ" >&2; exit 1; }
 [[ $(registry_config catcar-auth-function "${auth_image##*@}") == "$auth_config" ]] || { echo "Function archive and registry config differ" >&2; exit 1; }
 

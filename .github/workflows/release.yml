@@ -69,23 +69,26 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          name: kind-images
-          path: artifacts/release/kind-images
+          name: release-images
+          path: artifacts/release/release-images
       - uses: actions/download-artifact@v4
         with:
-          name: kind-evidence
-          path: artifacts/release/kind-evidence
+          name: release-evidence
+          path: artifacts/release/release-evidence
       - name: Verify validated image archives
         run: |
           set -euo pipefail
-          cd artifacts/release/kind-images
+          cd artifacts/release/release-images
           sha256sum -c SHA256SUMS
-          docker load -i api.tar
-          docker load -i auth-function.tar
-          evidence=../kind-evidence/validation.json
+          evidence=../release-evidence/release-evidence.json
           test "$(jq -r '.dirty' "$evidence")" = false
           test "$(jq -r '.platformSha' "$evidence")" = "$GITHUB_SHA"
-          jq -e '.checks | type == "object" and length > 0 and all(.[]; . == true)' "$evidence" >/dev/null
+          jq -e '.checks | .componentChecks == true and .pinnedIntegration == true and .trivy == true and all(.[]; . == true)' "$evidence" >/dev/null
+          source "$GITHUB_WORKSPACE/scripts/lib/image-digests.sh"
+          test "$(image_archive_config_digest api.tar)" = "$(jq -r '.imageConfigDigests.api' "$evidence")"
+          test "$(image_archive_config_digest auth-function.tar)" = "$(jq -r '.imageConfigDigests.authFunction' "$evidence")"
+          docker load -i api.tar
+          docker load -i auth-function.tar
           for component in catcar-app catcar-auth-function catcar-database-infra catcar-kubernetes-infra; do
             test "$(jq -r --arg component "$component" '.componentShas[$component]' "$evidence")" = "$(git -C "$GITHUB_WORKSPACE" rev-parse "HEAD:$component")"
           done

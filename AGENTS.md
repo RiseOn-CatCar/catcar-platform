@@ -150,11 +150,13 @@ make git-sync
 # Run Azure control-plane bootstrap (Resource Groups, Storage, Entra OIDC Apps, RBAC, GitHub secrets)
 ./scripts/bootstrap-azure.sh
 
-# Validate the pinned platform in local Kind
+# Optional local-only Kind validation; its evidence is not release evidence
 make kind-up
 make kind-validate
 
 # Azure deployments are coordinated only by strict version tags in the platform repository.
+# Required CI jobs: Component Checks, Pinned Integration (E2E), Release Images (Trivy).
+# PR-head checks are review-only; merge component PRs and repin checked main commits before tagging.
 # See docs/release-process.md and docs/azure-bootstrap.md; bootstrap defaults to preview.
 ```
 

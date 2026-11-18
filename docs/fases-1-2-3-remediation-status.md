@@ -23,10 +23,12 @@ Data: 2026-11-17. Complementa `docs/fases-1-2-3-audit-report.md`. Registra o que
 |Ambiente|Um ambiente Azure (`rg-catcar`, state `rg-catcar-tfstate`); Terraform sem variável `environment`; GitHub Environment `azure` só no meta-repo; bootstrap em prévia por padrão, `--apply` explícito.|
 |SDK/pacotes|.NET SDK 11.0.100, `net11.0`, matriz de pacotes do plano (EF Core permanece 10.0.15 por exigência do provider Npgsql), Function com `Azure.Functions.Sdk`.|
 |Kind|API, Function real, PostgreSQL com PVC retido, Azurite e Mailpit; imagens por digest; `make kind-validate` gera `artifacts/kind/validation.json`.|
-|Release|`ci.yml` (Component Checks, Pinned Integration, Kind Validation) e `release.yml` (somente tag estrita); imagens aprovadas promovidas ao ACR por digest sem rebuild; barreira APIM cobre toda mutação `/api/v1/**`.|
+|Release|`ci.yml` (Component Checks, Pinned Integration, Release Images, incluindo E2E e Trivy) e `release.yml` (somente tag estrita); imagens de CI aprovadas promovidas ao ACR por digest sem rebuild; barreira APIM cobre toda mutação `/api/v1/**`. Kind é apenas local e não gera evidência de release.|
 |Correções encontradas na validação|Logs sem URL (token de aprovação), prontidão HTTP no E2E, fixture do reconciler, política Wolverine 6 de service location e descoberta explícita de `CatalogSnapshotQueryHandlers`.|
 
 Verificado: Kind validado duas vezes (12 checks verdadeiros, `dirty=true`, evidência local, não de release); PostgreSQL reiniciado sem perda de dados; publish de Production offline com imagem por digest e HPA 2–10; Terraform `fmt`/`validate` nos quatro roots; actionlint e testes dos scripts. **Não verificado:** qualquer operação Azure real (primeiro bootstrap/tag), mapeamento de secrets do Helm gerado em nuvem, política APIM em APIM real, aborto de PVC sem Secret em namespace descartável, inspeção visual da UI Mailpit.
+
+O modo PR-head permite validar mudanças coordenadas durante a revisão, mas não autoriza release: após o merge dos componentes, atualizar os gitlinks para commits de `main` com checks push-to-main aprovados antes de criar a tag da plataforma.
 
 ## Verificação executada localmente
 

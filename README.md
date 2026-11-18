@@ -82,7 +82,7 @@ flowchart TD
 
 ## System Architecture & Cloud Topology
 
-In the single Azure environment, external traffic passes through Azure API Management. The modular monolith runs in Azure Kubernetes Service (AKS), while customer authentication is handled by Azure Functions. Kind provides local pre-release validation; only strict version tags in this platform repository initiate Azure deployment.
+In the single Azure environment, external traffic passes through Azure API Management. The modular monolith runs in Azure Kubernetes Service (AKS), while customer authentication is handled by Azure Functions. Kind is local-only; CI builds and scans release images, and only strict version tags in this platform repository initiate Azure deployment.
 
 ```mermaid
 flowchart TB
@@ -329,10 +329,12 @@ The platform provides standardized shell scripts located in [`scripts/`](scripts
 | :--- | :--- | :--- |
 | [`scripts/kind-with-registry.sh`](scripts/kind-with-registry.sh) | Local Kubernetes Cluster | Creates a local multi-node [Kind](https://kind.sigs.k8s.io/) cluster with an integrated Docker container registry on `localhost:5001`. |
 | [`scripts/bootstrap-azure.sh`](scripts/bootstrap-azure.sh) | Azure & GitHub Bootstrap | Establishes the Azure foundation (Resource Groups, Storage Account, Microsoft Entra OIDC Apps, RBAC) and GitHub Actions environments/secrets without provisioning application workloads. |
-| [`scripts/validate-kind.sh`](scripts/validate-kind.sh) | Local release validation | Builds and exercises the pinned application images in Kind and records evidence. |
+| [`scripts/validate-kind.sh`](scripts/validate-kind.sh) | Local Kubernetes validation | Builds and exercises the pinned application images in Kind and records local-only evidence. |
 | [`scripts/deploy-azure.sh`](scripts/deploy-azure.sh) | Coordinated Azure release | Executes gated release phases against the single Azure environment. |
 
 See the [Azure Bootstrap Guide](docs/azure-bootstrap.md) and [Release Process](docs/release-process.md) for prerequisites, governance, and recovery.
+
+Platform CI requires `Component Checks`, `Pinned Integration`, and `Release Images`, including E2E and Trivy. Component PR-head mode supports review of coordinated changes only; merge component PRs and repin their successfully checked `main` commits before tagging. Kind is not a CI or release gate.
 
 ---
 

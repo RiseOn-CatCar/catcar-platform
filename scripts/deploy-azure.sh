@@ -5,6 +5,7 @@ set +x
 umask 077
 
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source "$ROOT_DIR/scripts/lib/image-digests.sh"
 PAUSE_NAME=catcar-work-order-mutations-paused
 NAMESPACE=catcar
 
@@ -33,57 +34,18 @@ diagnose_previous_release() {
 }
 validate_evidence() {
   local evidence=$1 component actual
-  jq -e --arg sha "$GITHUB_SHA" '.dirty == false and .platformSha == $sha and (.checks | type == "object" and length > 0 and all(.[]; . == true)) and (.imageConfigDigests | [.api,.authFunction] | all(.[]; type == "string" and test("^sha256:[0-9a-f]{64}$")))' "$evidence" >/dev/null || { fail 'Invalid, dirty, or mismatched Kind evidence (imageConfigDigests required)'; return 1; }
+  jq -e --arg sha "$GITHUB_SHA" '.dirty == false and .platformSha == $sha and (.checks | type == "object" and .componentChecks == true and .pinnedIntegration == true and .trivy == true) and (.imageConfigDigests | [.api,.authFunction] | all(.[]; type == "string" and test("^sha256:[0-9a-f]{64}$")))' "$evidence" >/dev/null || { fail 'Invalid, dirty, or mismatched release evidence (required checks and imageConfigDigests required)'; return 1; }
   for component in catcar-app catcar-auth-function catcar-database-infra catcar-kubernetes-infra; do
     actual=$(git -C "$ROOT_DIR" rev-parse "HEAD:$component") || return 1
-    jq -e --arg component "$component" --arg sha "$actual" '.componentShas[$component] == $sha' "$evidence" >/dev/null || { fail "Kind evidence gitlink mismatch: $component"; return 1; }
+    jq -e --arg component "$component" --arg sha "$actual" '.componentShas[$component] == $sha' "$evidence" >/dev/null || { fail "Release evidence gitlink mismatch: $component"; return 1; }
   done
-}
-archive_config_digest() {
-  local archive=$1 listing manifest config expected actual descriptor json depth
-  listing=$(tar -tf "$archive") || { fail 'Cannot read image archive'; return 1; }
-  if grep -Fxq manifest.json <<<"$listing"; then
-    manifest=manifest.json
-  elif grep -Fxq ./manifest.json <<<"$listing"; then
-    manifest=./manifest.json
-  else
-    manifest=''
-  fi
-  if [[ -n $manifest ]]; then
-    config=$(tar -xOf "$archive" "$manifest" | jq -er 'if length == 1 then .[0].Config | strings else empty end') || { fail 'Invalid Docker archive manifest'; return 1; }
-    [[ $config =~ ^[a-zA-Z0-9._/-]+$ && /$config/ != *'/../'* && $config != /* ]] || { fail 'Invalid archive config path'; return 1; }
-    actual=$(tar -xOf "$archive" "$config" | sha256sum) || { fail 'Cannot read archive config'; return 1; }
-    printf 'sha256:%s\n' "${actual%% *}"
-    return 0
-  fi
-  if grep -Fxq index.json <<<"$listing"; then manifest=index.json
-  elif grep -Fxq ./index.json <<<"$listing"; then manifest=./index.json
-  else fail 'Image archive has neither Docker manifest nor OCI index'; return 1; fi
-  json=$(tar -xOf "$archive" "$manifest") || return 1
-  for ((depth=0; depth<4; depth++)); do
-    descriptor=$(jq -er 'if (.manifests | type) == "array" and (.manifests | length) == 1 then .manifests[0].digest else empty end' <<<"$json") || { fail 'OCI archive must resolve to exactly one manifest'; return 1; }
-    [[ $descriptor =~ ^sha256:[0-9a-f]{64}$ ]] || { fail 'Invalid OCI manifest digest'; return 1; }
-    config="blobs/sha256/${descriptor#sha256:}"
-    actual=$(tar -xOf "$archive" "$config" | sha256sum) || { fail 'Missing OCI manifest blob'; return 1; }
-    [[ sha256:${actual%% *} == "$descriptor" ]] || { fail 'OCI manifest blob digest mismatch'; return 1; }
-    json=$(tar -xOf "$archive" "$config") || return 1
-    expected=$(jq -r '.config.digest // empty' <<<"$json") || return 1
-    if [[ -n $expected ]]; then
-      [[ $expected =~ ^sha256:[0-9a-f]{64}$ ]] || { fail 'Invalid OCI config digest'; return 1; }
-      actual=$(tar -xOf "$archive" "blobs/sha256/${expected#sha256:}" | sha256sum) || { fail 'Missing OCI config blob'; return 1; }
-      [[ sha256:${actual%% *} == "$expected" ]] || { fail 'OCI config blob digest mismatch'; return 1; }
-      printf '%s\n' "$expected"
-      return 0
-    fi
-  done
-  fail 'OCI archive nesting exceeds limit'
 }
 verify_archive_configs() {
   local key archive actual expected
   for key in api authFunction; do
     if [[ $key == api ]]; then archive=api.tar; else archive=auth-function.tar; fi
-    expected=$(jq -er --arg key "$key" '.imageConfigDigests[$key]' "$ARTIFACTS/kind-evidence/validation.json") || return 1
-    actual=$(archive_config_digest "$ARTIFACTS/kind-images/$archive") || return 1
+    expected=$(jq -er --arg key "$key" '.imageConfigDigests[$key]' "$ARTIFACTS/release-evidence/release-evidence.json") || return 1
+    actual=$(image_archive_config_digest "$ARTIFACTS/release-images/$archive") || return 1
     verify_image_id "$actual" "$expected" "$key" || return 1
   done
 }
@@ -92,11 +54,12 @@ preflight() {
   [[ $GITHUB_REF_NAME =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { fail 'Invalid release tag'; return 1; }
   [[ $(git -C "$ROOT_DIR" rev-parse HEAD) == "$GITHUB_SHA" ]] || { fail 'Checkout does not match GITHUB_SHA'; return 1; }
   local file
-  for file in kind-images/api.tar kind-images/auth-function.tar kind-images/SHA256SUMS kind-evidence/validation.json; do
+  for file in release-images/api.tar release-images/auth-function.tar release-images/SHA256SUMS release-evidence/release-evidence.json; do
     [[ -f $ARTIFACTS/$file ]] || { fail "Missing artifact: $file"; return 1; }
   done
-  validate_evidence "$ARTIFACTS/kind-evidence/validation.json" || return 1
-  (cd "$ARTIFACTS/kind-images" && sha256sum -c SHA256SUMS >/dev/null) || { fail 'Image archive checksum mismatch'; return 1; }
+  validate_evidence "$ARTIFACTS/release-evidence/release-evidence.json" || return 1
+  awk 'BEGIN { ok=1 } !/^[0-9a-f]+  (api\.tar|auth-function\.tar)$/ || length($1) != 64 { ok=0 } /  api\.tar$/ { api++ } /  auth-function\.tar$/ { auth++ } END { exit !(ok && NR == 2 && api == 1 && auth == 1) }' "$ARTIFACTS/release-images/SHA256SUMS" || { fail 'Invalid image archive checksum manifest'; return 1; }
+  (cd "$ARTIFACTS/release-images" && sha256sum -c SHA256SUMS >/dev/null) || { fail 'Image archive checksum mismatch'; return 1; }
   verify_archive_configs || return 1
   if [[ $CHECK == true ]]; then return 0; fi
   [[ $(az account show --query tenantId -o tsv) == "$AZURE_TENANT_ID" ]] || { fail 'Azure tenant mismatch'; return 1; }
@@ -137,7 +100,7 @@ manifest_init() {
   if [[ -f $ARTIFACTS/release-manifest.json ]]; then
     jq -e --arg sha "$GITHUB_SHA" --arg tag "$GITHUB_REF_NAME" '.platformSha == $sha and .tag == $tag' "$ARTIFACTS/release-manifest.json" >/dev/null || { fail 'Release manifest belongs to another release'; return 1; }
   else
-    jq -n --arg sha "$GITHUB_SHA" --arg tag "$GITHUB_REF_NAME" --slurpfile evidence "$ARTIFACTS/kind-evidence/validation.json" '{tag:$tag,platformSha:$sha,gitlinks:$evidence[0].componentShas,imageIds:$evidence[0].imageIds,imageConfigDigests:$evidence[0].imageConfigDigests,images:{},resources:{},phases:{}}' > "$ARTIFACTS/release-manifest.json"
+    jq -n --arg sha "$GITHUB_SHA" --arg tag "$GITHUB_REF_NAME" --slurpfile evidence "$ARTIFACTS/release-evidence/release-evidence.json" '{tag:$tag,platformSha:$sha,gitlinks:$evidence[0].componentShas,imageConfigDigests:$evidence[0].imageConfigDigests,images:{},resources:{},phases:{}}' > "$ARTIFACTS/release-manifest.json"
   fi
 }
 require_phase() { jq -e --arg phase "$1" '.phases[$phase] == true' "$ARTIFACTS/release-manifest.json" >/dev/null || { fail "Required previous phase missing: $1"; return 1; }; }
@@ -160,13 +123,13 @@ verify_image_id() { [[ $1 == "$2" ]] || { fail "Image config digest mismatch: $3
 publish_images() {
   local key repo component sha expected image digest config full
   az acr login --name "$ACR" >/dev/null
-  docker load -i "$ARTIFACTS/kind-images/api.tar" > "$TMP_DIR/docker.log"
-  docker load -i "$ARTIFACTS/kind-images/auth-function.tar" >> "$TMP_DIR/docker.log"
+  docker load -i "$ARTIFACTS/release-images/api.tar" > "$TMP_DIR/docker.log"
+  docker load -i "$ARTIFACTS/release-images/auth-function.tar" >> "$TMP_DIR/docker.log"
   for key in api authFunction; do
     if [[ $key == api ]]; then repo=catcar-api; component=catcar-app; else repo=catcar-auth-function; component=catcar-auth-function; fi
     sha=$(git -C "$ROOT_DIR" rev-parse "HEAD:$component")
     image="localhost:5001/$repo:$sha"
-    expected=$(jq -er --arg key "$key" '.imageConfigDigests[$key]' "$ARTIFACTS/kind-evidence/validation.json")
+    expected=$(jq -er --arg key "$key" '.imageConfigDigests[$key]' "$ARTIFACTS/release-evidence/release-evidence.json")
     docker tag "$image" "$ACR_SERVER/$repo:$sha"
     docker push "$ACR_SERVER/$repo:$sha" > "$TMP_DIR/docker-push.log"
     digest=$(az acr repository show --name "$ACR" --image "$repo:$sha" --query digest -o tsv)
