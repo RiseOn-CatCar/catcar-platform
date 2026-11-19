@@ -119,7 +119,7 @@
     <tr><td><strong>Kubernetes escalável</strong></td><td>AKS multi-AZ com Azure CNI, Workload Identity e HPA baseado em CPU/memória, configurado de 2 a 10 réplicas.</td></tr>
     <tr><td><strong>Infraestrutura como código</strong></td><td>Os stacks <code>catcar-database-infra</code> e <code>catcar-kubernetes-infra</code> descrevem a infraestrutura Azure obrigatória integralmente em Terraform, com pipelines próprias de validação e aplicação.</td></tr>
     <tr><td><strong>Observabilidade e workbooks</strong></td><td>OpenTelemetry, Application Insights, Log Analytics, health checks, alertas de latência/CPU/memória/uptime e workbook operacional permitem acompanhamento técnico e de negócio.</td></tr>
-    <tr><td><strong>CI/CD dual-environment e governança</strong></td><td>Pipelines independentes publicam Homologação a partir de <code>develop</code> e Produção a partir de <code>main</code>; o bootstrap configura OIDC, ambientes e proteção de branches com PR, revisão e bloqueio de force-push/exclusão.</td></tr>
+    <tr><td><strong>CI/CD e governança de release</strong></td><td>Os quatro repositórios de componentes executam CI; o meta-repositório fixa os commits dos componentes como submódulos. Somente uma tag estrita <code>vMAJOR.MINOR.PATCH</code> no meta-repositório aciona <code>release.yml</code> pelo GitHub Environment <code>azure</code> e implanta os commits fixados no único ambiente Azure <code>rg-catcar</code>. Kind é usado apenas para validação local.</td></tr>
   </tbody></table>
 </body>
 </html>
