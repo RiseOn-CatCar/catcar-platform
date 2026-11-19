@@ -59,7 +59,7 @@ Docker passou a estar disponível e houve acesso autenticado ao Azure (assinatur
 - `dotnet restore`/`build -c Release` e `dotnet list package --vulnerable --include-transitive`: 0 erros, 0 avisos, nenhum pacote vulnerável (catcar-app e auth function).
 - Suíte completa com Docker: 417 testes unitários, de arquitetura e de integração PostgreSQL/Testcontainers (SharedKernel 28, Communication 72, Architecture 20, CatalogInventory 93, ServiceOperations 164, IdentityAccess 40) e 6 E2E aprovados; Auth Function 17/17. Repetido após o upgrade para Aspire 17.0.0 com o mesmo resultado.
 - `aspire publish` Production e LocalKubernetes + `helm template`: Deployment, Service, ConfigMap e Secret; HPA `autoscaling/v2` 2–10 com CPU e memória a 70% apenas em Production; Local referencia o Secret externo `catcar-local-runtime`.
-- Relatório de vulnerabilidades refeito (`docs/vulnerability-report.md`): NuGet sem achados, Semgrep (`p/csharp`, `p/security-audit`) 0 achados, Trivy API 0 CRITICAL/0 HIGH, Trivy Function sem achados.
+- Relatório de vulnerabilidades refeito (`docs/vulnerability-report.md`): NuGet sem achados, Semgrep (`p/csharp`, `p/security-audit`) 0 achados, Trivy Function sem achados. A imagem da API passou localmente, mas o gate Release Images da plataforma reprovou depois a base `aspnet:11.0.0` (Ubuntu) por CVE-2026-97054 (HIGH, `/usr/bin/pebble`); o runtime migrou para `aspnet:11.0.0-azurelinux3.0` (usuário `app`, UID 1654), com 0 HIGH/CRITICAL no Trivy local (catcar-app PR #10).
 - Collection Postman: 35 requisições conferidas contra o mapeamento real dos endpoints, sem divergência de método, rota ou corpo (conferência estática; não executada contra um ambiente).
 
 ### Situação por achado
