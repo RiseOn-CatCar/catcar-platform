@@ -307,7 +307,7 @@ Features/WorkOrders/OpenWorkOrder/
 - **Local .NET Tools (`catcar-app/dotnet-tools.json`)**:
   - `dotnet-ef` (`10.0.12`): EF Core database migrations.
   - `dotnet-sonarscanner` (`11.3.0`): SonarQube Cloud quality analysis.
-  - `aspire.cli` (`13.5.4`): .NET Aspire orchestration and manifest generation.
+  - `aspire.cli` (`17.0.0`): .NET Aspire orchestration and manifest generation.
 
 ---
 
@@ -319,7 +319,7 @@ Features/WorkOrders/OpenWorkOrder/
 - **Mocking**: `NSubstitute` (`6.2.0`) for test doubles (`Substitute.For<T>()`).
 - **Integration Testing**: `Testcontainers.PostgreSql` (`4.15.0`) spinning up ephemeral `postgres:17-alpine` Docker containers to test real PostgreSQL schemas, `xmin` concurrency, and Wolverine outbox tables.
 - **Architecture Enforcement**: `NetArchTest.Rules` (`1.3.2`) enforcing DDD boundaries, cross-context isolation, and layer direction.
-- **End-to-End Orchestration**: `Aspire.Hosting.Testing` (`13.5.4`) running the complete multi-resource AppHost in-process.
+- **End-to-End Orchestration**: `Aspire.Hosting.Testing` (`17.0.0`) running the complete multi-resource AppHost in-process.
 - **Fake Data Generation**: `Bogus` (`35.6.5`).
 - **Code Coverage**: `coverlet.collector` (`10.0.1`).
 

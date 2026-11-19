@@ -13,7 +13,7 @@ The Phase 3 Tech Challenge specifications require splitting the CatCar system in
 3. Managed Database & Secrets Infrastructure (`catcar-database-infra`)
 4. Main Modular Monolith Application & Aspire AppHost (`catcar-app`)
 
-Each repository must have an autonomous CI/CD pipeline targeting both **Homologation** (branch `develop`) and **Production** (branch `main`). At the same time, local developer experience (inner loop) must continue to run the complete solution—API, PostgreSQL database, Azurite storage emulator, and Serverless Auth Function—using .NET Aspire with a single command (`dotnet run --project src/Host/CatCar.AppHost`).
+The Phase 3 Tech Challenge originally specified branch-based deployments to Homologation (`develop`) and Production (`main`). The current operating contract supersedes that model: all four component repositories run CI only; the `catcar-platform` repository pins their commits as submodules, and a strict `vMAJOR.MINOR.PATCH` tag on the platform repository triggers the coordinated release to the single Azure environment `rg-catcar`. Local developer experience (inner loop) continues to run the complete solution—API, PostgreSQL database, Azurite storage emulator, and Serverless Auth Function—using .NET Aspire with a single command (`dotnet run --project src/Host/CatCar.AppHost`); Kind is local validation only.
 
 ## Decision
 
@@ -30,14 +30,16 @@ Each repository must have an autonomous CI/CD pipeline targeting both **Homologa
    - In **Run Mode** (`isRunMode`), Aspire AppHost registers the function via the path overload:
      `builder.AddAzureFunctionsProject("auth-function", "../../../external/catcar-auth-function/src/CatCar.AuthFunction/CatCar.AuthFunction.csproj")`.
      This provides unified local debugging without MSBuild `<ProjectReference>` compilation coupling or SDK type generation.
-   - In **Publish Mode** (`isPublishMode`), Aspire models only the Kubernetes API container workloads and external connection strings, while Azure Container Apps deployment for the Auth Function is managed strictly by its own CI/CD pipeline.
+   - In **Publish Mode** (`isPublishMode`), Aspire models the Kubernetes API workload and external connection strings.
 
-4. **Branching & Environments**:
-   - Protected branches `main` (Production environment) and `develop` (Homologation environment) are enforced across all four repositories with required pull request reviews and status checks.
+4. **Coordinated Single-Environment Release**:
+   - The four component repositories run CI only. The `catcar-platform` repository pins each component commit as a Git submodule.
+   - Only a strict `vMAJOR.MINOR.PATCH` tag on `catcar-platform` triggers `release.yml` through GitHub Environment `azure`, deploying those pinned commits to the single Azure environment `rg-catcar` in order: foundation infrastructure → database → API on AKS → Function → alerts and smoke checks.
+   - Kind is for local validation only and is never release evidence.
 
 ## Consequences
 
-- **Independent Life Cycles**: Infrastructure, serverless authentication, and application services deploy independently without cascading deployment dependencies.
+- **Coordinated Life Cycle**: Components retain separate histories and CI, while the platform repository coordinates their pinned commits into a gated Azure release.
 - **Inner Loop Integrity**: Local development remains unified with zero extra setup overhead; developers clone with `--recurse-submodules` and run Aspire normally.
 - **Loose Coupling**: Cross-repo references are limited to published language contracts (`IIntegrationEvent`), standard HTTP/JWT protocols, and runtime environment configuration.
 

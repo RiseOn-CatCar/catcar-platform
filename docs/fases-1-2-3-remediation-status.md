@@ -1,6 +1,6 @@
 # Fases 1–3: status da implementação corretiva
 
-Data: 2026-11-17. Complementa `docs/fases-1-2-3-audit-report.md`. Registra o que foi implementado e verificado na estação local, e o que depende de Azure, Docker ou pessoas.
+Data: 2026-11-17, revalidado em 2026-11-18 (seção final). Complementa `docs/fases-1-2-3-audit-report.md`. Registra o que foi implementado e verificado na estação local, e o que depende de Azure, Docker ou pessoas.
 
 ## Implementado no código e nos repositórios (sem commit/PR ainda)
 
@@ -49,3 +49,40 @@ O modo PR-head permite validar mudanças coordenadas durante a revisão, mas nã
 - Aprovação/recusa por link recebido na caixa real continuam passos manuais do smoke.
 - Retry automático do Wolverine para `DbUpdateConcurrencyException` está configurado, mas só simulado nos testes.
 - Pacote acadêmico (vídeo ≤15 min, Discord, Portal): dependente do responsável; entrega **não** pode ser declarada completa.
+
+## Revalidação 18/11/2026
+
+Docker passou a estar disponível e houve acesso autenticado ao Azure (assinatura `RiseOn`, `b590511a-…`). A assinatura `184b4b25-…` referida pelas variáveis antigas não é acessível; não havia recursos nem state CatCar na assinatura atual, portanto o bootstrap partiu de ambiente vazio.
+
+### Verificações executadas
+
+- `dotnet restore`/`build -c Release` e `dotnet list package --vulnerable --include-transitive`: 0 erros, 0 avisos, nenhum pacote vulnerável (catcar-app e auth function).
+- Suíte completa com Docker: 417 testes unitários, de arquitetura e de integração PostgreSQL/Testcontainers (SharedKernel 28, Communication 72, Architecture 20, CatalogInventory 93, ServiceOperations 164, IdentityAccess 40) e 6 E2E aprovados; Auth Function 17/17. Repetido após o upgrade para Aspire 17.0.0 com o mesmo resultado.
+- `aspire publish` Production e LocalKubernetes + `helm template`: Deployment, Service, ConfigMap e Secret; HPA `autoscaling/v2` 2–10 com CPU e memória a 70% apenas em Production; Local referencia o Secret externo `catcar-local-runtime`.
+- Relatório de vulnerabilidades refeito (`docs/vulnerability-report.md`): NuGet sem achados, Semgrep (`p/csharp`, `p/security-audit`) 0 achados, Trivy API 0 CRITICAL/0 HIGH, Trivy Function sem achados.
+- Collection Postman: 35 requisições conferidas contra o mapeamento real dos endpoints, sem divergência de método, rota ou corpo (conferência estática; não executada contra um ambiente).
+
+### Situação por achado
+
+|Achado|Situação|Evidência / pendência|
+|:---|:---|:---|
+|A01 build/publicação|Resolvido|Aspire hosting, CLI e publicador Kubernetes 17.0.0 (cliente Npgsql EF 13.6.5, última estável); AppHost migrado de `Aspire.AppHost.Sdk` (ASPIRE012) para `Microsoft.NET.Sdk`. Verificações acima.|
+|A02 CD/OIDC|Parcial|Bootstrap aplicado: RGs `rg-catcar`/`rg-catcar-tfstate`, state `stcatcartf3c4128ef`, app `catcar-github-azure-deploy` com credencial federada exatamente `repo:RiseOn-CatCar@330941078/catcar-platform@1376139605:environment:azure`, papéis no escopo do RG, environment `azure` restrito a tags `v*`, 10 variáveis e 7 secrets. Provedores de recursos necessários registrados. **Nenhum release por tag executado**: login OIDC real, deploy e smoke continuam não comprovados.|
+|A03 contrato de ambiente|Resolvido|Contrato único no IaC/scripts/AppHost. GitHub limpo: componentes sem environments nem variáveis (são só CI); plataforma só com o environment `azure`; variáveis de repositório obsoletas (`catcar-homolog`, assinatura antiga, client ID antigo) removidas.|
+|A04 Function|Resolvido no código|Root `catcar-auth-function/infra`, ACA interno, `--provision-auth-readonly`, chave JWT compartilhada via Key Vault. Execução em Azure pendente do primeiro release.|
+|A05 reserva de estoque|Resolvido|Aprovação não inicia execução; execução exige reserva confirmada; falha devolve a OS ao diagnóstico; testes de integração PostgreSQL executados. Ordens legadas são reconciliadas pelo Job `--reconcile-inventory` do release, com a barreira APIM bloqueando mutações durante o deploy.|
+|A06 dashboard|Resolvido no código|Workbook e alerta consomem `WorkOrderOpened`/`WorkOrderStageCompleted`/`WorkOrderIntegrationFailed` emitidos pela aplicação; volume diário passou a contar `WorkOrderId` distintos (catcar-kubernetes-infra PR #11). Ingestão e disparo de alerta pendentes do release.|
+|A07 Postman|Resolvido|Rotas, corpos e autenticação alinhados; ver verificação acima.|
+|A08 governança/cobertura|Parcial|Gate `verify-domain-coverage.cs` (≥80% em SharedKernel, ServiceOperations/Domain, CatalogInventory/Domain) no CI. **Proteção de branch não alterada por decisão do responsável**: bypass de PR para `daviholandas` e nenhum check obrigatório nos cinco repositórios.|
+|A09 e-mail|Resolvido no código|E-mail obrigatório para emitir orçamento; notificação sem destinatário falha de forma explícita; sem `LoggingEmailSender` fora de Development. Entrega real pendente do release.|
+|A10 pacote acadêmico|Parcial|Relatório de vulnerabilidades atual; ADR 003, entrega MD/HTML e links do README alinhados ao modelo atual. Vídeo, username Discord, PDF regenerado e comprovante do Portal dependem do responsável.|
+|Token de aprovação em logs|Resolvido na API|URL removida dos logs Serilog e das tags de Activity, com teste de integração. O APIM não tem diagnóstico/logger configurado no Terraform, então não registra URLs; se um diagnóstico for adicionado, o caminho com token precisa ser excluído.|
+
+### Divergências com o edital ainda abertas
+
+- A fase 3 pede deploy automático por branch para homologação e produção; o projeto adotou deliberadamente um único ambiente Azure com release por tag. Justificar na entrega.
+- A fase 1 pede repositório privado; os cinco repositórios continuam públicos.
+
+### Próximo passo operacional
+
+Com os gitlinks da plataforma apontando para commits de `main` com checks de push aprovados, criar a tag `vMAJOR.MINOR.PATCH` para executar o primeiro release (gera custo Azure) e anexar a evidência de deploy, smoke, workbook e alerta.
