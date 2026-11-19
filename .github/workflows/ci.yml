@@ -1,0 +1,123 @@
+name: Platform CI
+
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_call:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  component-checks:
+    name: Component Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Verify checks for pinned commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/verify-component-checks.sh --repository-root "$GITHUB_WORKSPACE" --mode "${{ github.event_name == 'pull_request' && 'pull-request' || 'release' }}"
+
+  pinned-integration:
+    name: Pinned Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: catcar
+          POSTGRES_USER: catcar
+          POSTGRES_PASSWORD: catcar_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.404
+            11.0.100
+      - name: Install .NET 10 runtime
+        run: |
+          curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$RUNNER_TEMP/dotnet-install.sh"
+          bash "$RUNNER_TEMP/dotnet-install.sh" --runtime dotnet --version 10.0.15 --install-dir "$DOTNET_ROOT"
+      - name: Install Azure Functions Core Tools
+        run: npm install --global azure-functions-core-tools@4.16.1 --unsafe-perm
+      - name: Restore and test pinned Function
+        working-directory: catcar-auth-function
+        run: |
+          dotnet restore CatCar.AuthFunction.slnx
+          dotnet build CatCar.AuthFunction.slnx --no-restore -c Release
+          dotnet test CatCar.AuthFunction.slnx --no-build -c Release
+      - name: Restore and test pinned application
+        working-directory: catcar-app
+        env:
+          ConnectionStrings__catcar: Host=localhost;Database=catcar;Username=catcar;Password=catcar_local
+        run: |
+          dotnet tool restore
+          dotnet restore CatCar.slnx
+          dotnet build CatCar.slnx --no-restore -c Release
+          dotnet test CatCar.slnx --no-build -c Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/Coverage --logger 'trx;LogFileName=all-tests.trx' -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+          dotnet run scripts/verify-domain-coverage.cs -- --root . --reports TestResults/Coverage --minimum 80
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pinned-test-results
+          path: catcar-app/TestResults/
+
+  release-images:
+    name: Release Images
+    needs: [component-checks, pinned-integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.100
+      - name: Build pinned release images
+        run: bash scripts/build-release-images.sh build
+      - name: Scan approved API image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          input: artifacts/release-images/api.tar
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+      - name: Scan approved Function image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          input: artifacts/release-images/auth-function.tar
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+      - name: Record release evidence after successful scans
+        run: bash scripts/build-release-images.sh evidence
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-images
+          path: artifacts/release-images/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence
+          path: artifacts/release-evidence/release-evidence.json
+          if-no-files-found: error

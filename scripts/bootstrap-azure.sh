@@ -3,65 +3,27 @@ set -euo pipefail
 IFS=$'\n\t'
 
 readonly APPLICATION_NAME="catcar"
-readonly STATE_CONTAINER="tfstate"
-readonly PLAN_APPLICATION_NAME="catcar-github-terraform-plan"
+readonly STATE_CONTAINER_DEFAULT="tfstate"
+readonly DEPLOY_APPLICATION_NAME="catcar-github-azure-deploy"
 readonly OIDC_ISSUER="https://token.actions.githubusercontent.com"
 readonly OIDC_AUDIENCE="api://AzureADTokenExchange"
-
-# Target repositories across the organization
-DEFAULT_REPOSITORIES=("catcar-app" "catcar-auth-function" "catcar-database-infra" "catcar-kubernetes-infra")
+readonly GITHUB_REPOSITORY="RiseOn-CatCar/catcar-platform"
+readonly EXPECTED_PREFIX="repo:RiseOn-CatCar@330941078/catcar-platform@1376139605"
+readonly GH_ENV="azure"
 
 mode="dry-run"
-target_environment="all"
-skip_branch_protection="false"
 env_file=".env"
 bootstrap_principal_object_id="${BOOTSTRAP_PRINCIPAL_OBJECT_ID:-}"
 bootstrap_principal_type="${BOOTSTRAP_PRINCIPAL_TYPE:-User}"
-AZURE_LOCATION="${AZURE_LOCATION:-}"
 usage() {
     cat <<'EOF'
-Usage: scripts/bootstrap-azure.sh [--dry-run | --apply] [--environment homologation|production|all]
-                                  [--env-file PATH] [--skip-branch-protection]
-                                  [--bootstrap-principal-object-id OBJECT_ID] [--bootstrap-principal-type TYPE]
-Creates or reuses CatCar Azure and GitHub control-plane prerequisites for Homologation, Production, or both.
-Default mode is --dry-run. Default environment is all.
+Usage: scripts/bootstrap-azure.sh [--dry-run | --apply] [--env-file PATH]
+       [--bootstrap-principal-object-id OBJECT_ID] [--bootstrap-principal-type TYPE]
 
-Options:
-  --environment, -e ENV   Target environment: homologation, production, or all (default: all)
-  --dry-run               Preview actions without mutating Azure or GitHub (default)
-  --apply                 Apply changes to Azure and GitHub
-  --env-file, -f PATH     Path to .env file to load/save variables (default: .env if present)
-  --skip-branch-protection Skip configuring branch protection rules on GitHub repositories
-  --bootstrap-principal-object-id OBJECT_ID
-                          Microsoft Entra object ID of the operator running bootstrap
-  --bootstrap-principal-type TYPE
-                          Type of bootstrap principal (User, ServicePrincipal, Group; default: User)
-  --help, -h              Show this help message
-
-What this script configures:
-1. Azure Control Plane:
-   - Resource Groups for State, Foundation, and Workloads (Homologation & Production)
-   - Encrypted, private Terraform State Storage Accounts and 'tfstate' container
-   - Microsoft Entra ID (Azure AD) Workload Identities with OIDC Federated Credentials
-   - Role-Based Access Control (RBAC) assignments for plan and deployment identities
-2. GitHub Repositories (catcar-app, catcar-auth-function, catcar-database-infra, catcar-kubernetes-infra, catcar-platform):
-   - Repository-level variables (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_LOCATION, etc.)
-   - Environments ('homologation' and 'production')
-   - Environment-scoped variables (AZURE_DEPLOY_CLIENT_ID, AKS cluster, ACR, Key Vault, Log Analytics, App Insights)
-   - Environment-scoped secrets (POSTGRES_ADMIN_PASSWORD, POSTGRES_AUTH_READONLY_PASSWORD, JWT_SECRET, CUSTOMER_JWT_SIGNING_KEY)
-   - Branch Protection Rules for 'main' and 'develop' (pull request reviews required, no direct push, force push disabled)
-
-Configuration and Secrets:
-  Variables can be set in shell, in a .env file, or auto-generated.
-  If omitted, database passwords and JWT signing keys are automatically generated
-  securely and saved to the .env file with permissions 0600.
-Optional environment-specific overrides:
-  POSTGRES_ADMIN_PASSWORD_HOMOLOG, POSTGRES_ADMIN_PASSWORD_PROD
-  POSTGRES_AUTH_READONLY_PASSWORD_HOMOLOG, POSTGRES_AUTH_READONLY_PASSWORD_PROD
-  JWT_SECRET_HOMOLOG, JWT_SECRET_PROD
-  CUSTOMER_JWT_SIGNING_KEY_HOMOLOG, CUSTOMER_JWT_SIGNING_KEY_PROD
-  FOUNDATION_RESOURCE_GROUP_HOMOLOG, FOUNDATION_RESOURCE_GROUP_PROD
-  REPOSITORIES (space-separated list of repository names to configure)
+Preview the single Azure release bootstrap by default; --apply explicitly changes
+Azure and the azure environment in RiseOn-CatCar/catcar-platform.
+STATE_PREFLIGHT_CONFIRMED=true is required for apply after reviewing existing state
+and resource ownership. See docs/azure-bootstrap.md for required configuration.
 EOF
 }
 
@@ -89,122 +51,6 @@ load_env_file() {
         fi
     done < "$file"
 }
-is_auto_generated() {
-    local target="$1"
-    local s
-    for s in "${generated_secrets[@]}"; do
-        [[ "$s" == "$target" ]] && return 0
-    done
-    return 1
-}
-
-
-generate_password() {
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import secrets, string; print("Aa1!" + "".join(secrets.choice(string.ascii_letters + string.digits + "!#%&*-_=+") for _ in range(16)))'
-    elif command -v openssl >/dev/null 2>&1; then
-        printf 'Aa1!%s' "$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9!#%&*-_=+' | head -c 16)"
-    else
-        printf 'Aa1!%s' "$(LC_ALL=C tr -dc 'A-Za-z0-9!#%&*-_=+' < /dev/urandom | head -c 16)"
-    fi
-}
-
-generate_jwt_key() {
-    if command -v openssl >/dev/null 2>&1; then
-        openssl rand -hex 32
-    elif command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import secrets; print(secrets.token_hex(32))'
-    else
-        LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom | head -c 64
-    fi
-}
-
-upsert_env_file_entry() {
-    local target_file="$1"
-    local key="$2"
-    local value="$3"
-    local tmp_file
-
-    tmp_file="$(mktemp)"
-    awk -v key="$key" -v value="$value" '
-        BEGIN { updated = 0; replacement = key "=\"" value "\"" }
-        $0 ~ "^[[:space:]]*" key "=" {
-            if (updated == 0) {
-                print replacement
-                updated = 1
-            }
-            next
-        }
-        { print }
-        END {
-            if (updated == 0) {
-                print replacement
-            }
-        }
-    ' "$target_file" > "$tmp_file"
-    mv "$tmp_file" "$target_file"
-}
-
-save_env_file() {
-    local target_file="${1:-.env}"
-    if [[ -f "$target_file" ]]; then
-        printf 'Ensuring %s contains all effective configuration and secrets...\n' "$target_file"
-        chmod 600 "$target_file"
-    else
-        printf 'Creating %s (mode 0600) with configuration and generated secrets...\n' "$target_file"
-        touch "$target_file"
-        chmod 600 "$target_file"
-        cat > "$target_file" <<EOF
-# CatCar Platform Environment Configuration
-# Generated/updated by scripts/bootstrap-azure.sh
-# KEEP THIS FILE SECURE AND NEVER COMMIT TO GIT
-
-APIM_PUBLISHER_NAME="${APIM_PUBLISHER_NAME}"
-APIM_PUBLISHER_EMAIL="${APIM_PUBLISHER_EMAIL}"
-
-# Database Passwords
-POSTGRES_ADMIN_PASSWORD="${POSTGRES_ADMIN_PASSWORD}"
-POSTGRES_AUTH_READONLY_PASSWORD="${POSTGRES_AUTH_READONLY_PASSWORD}"
-
-# Cryptographic JWT Signing Keys (HMAC-SHA256 256-bit keys)
-JWT_SECRET="${JWT_SECRET}"
-CUSTOMER_JWT_SIGNING_KEY="${CUSTOMER_JWT_SIGNING_KEY}"
-EOF
-    fi
-
-    declare -A vars_to_persist=(
-        ["APIM_PUBLISHER_NAME"]="$APIM_PUBLISHER_NAME"
-        ["APIM_PUBLISHER_EMAIL"]="$APIM_PUBLISHER_EMAIL"
-        ["POSTGRES_ADMIN_PASSWORD"]="$POSTGRES_ADMIN_PASSWORD"
-        ["POSTGRES_AUTH_READONLY_PASSWORD"]="$POSTGRES_AUTH_READONLY_PASSWORD"
-        ["JWT_SECRET"]="$JWT_SECRET"
-        ["CUSTOMER_JWT_SIGNING_KEY"]="$CUSTOMER_JWT_SIGNING_KEY"
-    )
-
-    if [[ -n "${JWT_SECRET_HOMOLOG:-}" ]]; then
-        vars_to_persist["JWT_SECRET_HOMOLOG"]="$JWT_SECRET_HOMOLOG"
-    fi
-    if [[ -n "${CUSTOMER_JWT_SIGNING_KEY_HOMOLOG:-}" ]]; then
-        vars_to_persist["CUSTOMER_JWT_SIGNING_KEY_HOMOLOG"]="$CUSTOMER_JWT_SIGNING_KEY_HOMOLOG"
-    fi
-    if [[ -n "${JWT_SECRET_PROD:-}" ]]; then
-        vars_to_persist["JWT_SECRET_PROD"]="$JWT_SECRET_PROD"
-    fi
-    if [[ -n "${CUSTOMER_JWT_SIGNING_KEY_PROD:-}" ]]; then
-        vars_to_persist["CUSTOMER_JWT_SIGNING_KEY_PROD"]="$CUSTOMER_JWT_SIGNING_KEY_PROD"
-    fi
-
-    for key in "APIM_PUBLISHER_NAME" "APIM_PUBLISHER_EMAIL" "POSTGRES_ADMIN_PASSWORD" "POSTGRES_AUTH_READONLY_PASSWORD" "JWT_SECRET" "CUSTOMER_JWT_SIGNING_KEY"; do
-        local val="${vars_to_persist[$key]}"
-        upsert_env_file_entry "$target_file" "$key" "$val"
-    done
-
-    for key in "JWT_SECRET_HOMOLOG" "CUSTOMER_JWT_SIGNING_KEY_HOMOLOG" "JWT_SECRET_PROD" "CUSTOMER_JWT_SIGNING_KEY_PROD"; do
-        if [[ -n "${vars_to_persist[$key]:-}" ]]; then
-            upsert_env_file_entry "$target_file" "$key" "${vars_to_persist[$key]}"
-        fi
-    done
-}
 
 require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
@@ -213,20 +59,6 @@ require_command() {
 require_nonempty_environment() {
     local name="$1"
     [[ -n "${!name:-}" ]] || fail "--apply requires environment variable $name"
-}
-
-preflight_self_hosted_runner() {
-    local repo="$1"
-    local compatible_runner_names
-
-    if ! compatible_runner_names="$(gh api --method GET --paginate "repos/$repo/actions/runners?per_page=100" 2>/dev/null \
-        --jq '.runners[] | select((.status | ascii_downcase) == "online" and ([.labels[].name | ascii_downcase] | index("self-hosted") != null) and ([.labels[].name | ascii_downcase] | index("linux") != null) and ([.labels[].name | ascii_downcase] | index("x64") != null)) | .name')"; then
-        return
-    fi
-
-    if [[ -z "$compatible_runner_names" ]]; then
-        printf 'note: no online self-hosted runner found for %s (hosted ubuntu-latest runners are supported by current workflows).\n' "$repo"
-    fi
 }
 
 ensure_resource_group() {
@@ -386,6 +218,9 @@ ensure_federated_credential() {
     local existing_issuer
     local existing_audience
     local parameters_file
+    local suffix
+    suffix="$(printf '%s' "$subject" | sha256sum)"
+    credential_name="${credential_name}-${suffix:0:8}"
 
     existing_subject="$(az ad app federated-credential list \
         --id "$application_object_id" \
@@ -405,12 +240,7 @@ ensure_federated_credential() {
             printf 'Reusing federated credential %s.\n' "$credential_name"
             return
         fi
-        printf 'Recreating federated credential %s with updated subject.\n' "$credential_name"
-        az ad app federated-credential delete \
-            --id "$application_object_id" \
-            --federated-credential-id "$credential_name" \
-            --only-show-errors \
-            --output none
+        fail "Federated credential $credential_name exists with different issuer, audience or subject; inspect it manually"
     fi
 
     parameters_file="$(mktemp)"
@@ -488,13 +318,6 @@ create_state_container() {
     done
 }
 
-set_repo_variable() {
-    local repo="$1"
-    local name="$2"
-    local value="$3"
-    gh variable set "$name" --repo "$repo" --body "$value"
-}
-
 set_env_variable() {
     local repo="$1"
     local env="$2"
@@ -511,585 +334,126 @@ set_env_secret() {
     printf '%s' "$value" | gh secret set "$name" --repo "$repo" --env "$env"
 }
 
-ensure_branch_exists() {
-    local target_repo="$1"
-    local branch_name="$2"
-
-    if gh api --method GET "repos/$target_repo/branches/$branch_name" --silent >/dev/null 2>&1; then
-        return 0
-    fi
-
-    printf 'Creating branch %s from main on %s...\n' "$branch_name" "$target_repo"
-    local main_sha
-    main_sha="$(gh api "repos/$target_repo/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)"
-    if [[ -n "$main_sha" ]]; then
-        if gh api --method POST "repos/$target_repo/git/refs" \
-            --field ref="refs/heads/$branch_name" \
-            --field sha="$main_sha" --silent >/dev/null 2>&1; then
-            printf 'Branch %s created successfully on %s.\n' "$branch_name" "$target_repo"
-        else
-            printf 'warning: failed to create branch %s on %s via GitHub API.\n' "$branch_name" "$target_repo" >&2
-        fi
-    else
-        printf 'warning: could not determine main branch SHA on %s.\n' "$target_repo" >&2
-    fi
-}
-
-ensure_branch_protection() {
-    local target_repo="$1"
-    local branch_name="$2"
-
-    ensure_branch_exists "$target_repo" "$branch_name"
-
-    if ! gh api --method GET "repos/$target_repo/branches/$branch_name" --silent >/dev/null 2>&1; then
-        printf 'note: branch %s does not exist in %s; skipping branch protection.\n' "$branch_name" "$target_repo"
-        return 0
-    fi
-
-    printf 'Applying branch protection to %s (branch: %s)...\n' "$target_repo" "$branch_name"
-    local api_error
-    if ! api_error="$(gh api --method PUT "repos/$target_repo/branches/$branch_name/protection" \
-        --header "Accept: application/vnd.github+json" \
-        --input - <<EOF 2>&1
-{
-  "required_status_checks": null,
-  "enforce_admins": true,
-  "required_pull_request_reviews": {
-    "dismiss_stale_reviews": true,
-    "require_code_owner_reviews": false,
-    "required_approving_review_count": 1
-  },
-  "restrictions": null,
-  "allow_force_pushes": false,
-  "allow_deletions": false
-}
-EOF
-)"; then
-        local is_private
-        is_private="$(gh repo view "$target_repo" --json isPrivate --jq .isPrivate 2>/dev/null || true)"
-        if [[ "$is_private" == "true" && "$api_error" == *"Upgrade to GitHub Pro or make this repository public"* ]]; then
-            printf 'note: repository %s is private; on GitHub Free tier, branch protection requires GitHub Pro/Team or making the repository public (gh repo edit %s --visibility public).\n' "$target_repo" "$target_repo"
-        else
-            printf 'warning: could not update branch protection for %s on %s: %s\n' "$branch_name" "$target_repo" "$api_error" >&2
-        fi
-    else
-        printf 'Branch protection enabled on %s (%s).\n' "$target_repo" "$branch_name"
-    fi
-}
-
-get_env_config() {
-    local env="$1"
-    case "$env" in
-        homologation)
-            ENV_NAME="homolog"
-            GH_ENV="homologation"
-            FOUNDATION_RG="${FOUNDATION_RESOURCE_GROUP_HOMOLOG:-catcar-homolog}"
-            WORKLOAD_RG="${WORKLOAD_RESOURCE_GROUP_HOMOLOG:-catcar-homolog}"
-            STATE_RG="${STATE_RESOURCE_GROUP_HOMOLOG:-catcar-homolog}"
-            DEPLOY_APP_NAME="catcar-github-homolog-deploy"
-            AKS_CLUSTER_NAME="aks-catcar-homolog"
-            ACR_NAME="crccarhomolog"
-            KEY_VAULT_NAME="kv-catcar-homolog"
-            LOG_ANALYTICS_NAME="log-catcar-homolog"
-            APP_INSIGHTS_NAME="appi-catcar-homolog"
-            STATE_KEY="homolog-catcar-kubernetes.tfstate"
-            ENV_POSTGRES_ADMIN_PASSWORD="${POSTGRES_ADMIN_PASSWORD_HOMOLOG:-${POSTGRES_ADMIN_PASSWORD:-}}"
-            ENV_POSTGRES_AUTH_READONLY_PASSWORD="${POSTGRES_AUTH_READONLY_PASSWORD_HOMOLOG:-${POSTGRES_AUTH_READONLY_PASSWORD:-}}"
-            ENV_JWT_SECRET="${JWT_SECRET_HOMOLOG:-${JWT_SECRET:-}}"
-            ENV_CUSTOMER_JWT_SIGNING_KEY="${CUSTOMER_JWT_SIGNING_KEY_HOMOLOG:-${CUSTOMER_JWT_SIGNING_KEY:-}}"
-            ;;
-        production)
-            ENV_NAME="prod"
-            GH_ENV="production"
-            FOUNDATION_RG="${FOUNDATION_RESOURCE_GROUP_PROD:-${FOUNDATION_RESOURCE_GROUP:-catcar-prod}}"
-            WORKLOAD_RG="${WORKLOAD_RESOURCE_GROUP_PROD:-catcar-prod}"
-            STATE_RG="${STATE_RESOURCE_GROUP_PROD:-catcar-prod}"
-            DEPLOY_APP_NAME="catcar-github-production-deploy"
-            AKS_CLUSTER_NAME="aks-catcar-prod"
-            ACR_NAME="crccarprod"
-            KEY_VAULT_NAME="kv-catcar-prod"
-            LOG_ANALYTICS_NAME="log-catcar-prod"
-            APP_INSIGHTS_NAME="appi-catcar-prod"
-            STATE_KEY="catcar-kubernetes.tfstate"
-            ENV_POSTGRES_ADMIN_PASSWORD="${POSTGRES_ADMIN_PASSWORD_PROD:-${POSTGRES_ADMIN_PASSWORD:-}}"
-            ENV_POSTGRES_AUTH_READONLY_PASSWORD="${POSTGRES_AUTH_READONLY_PASSWORD_PROD:-${POSTGRES_AUTH_READONLY_PASSWORD:-}}"
-            ENV_JWT_SECRET="${JWT_SECRET_PROD:-${JWT_SECRET:-}}"
-            ENV_CUSTOMER_JWT_SIGNING_KEY="${CUSTOMER_JWT_SIGNING_KEY_PROD:-${CUSTOMER_JWT_SIGNING_KEY:-}}"
-            ;;
-        *)
-            fail "unsupported environment: $env"
-            ;;
-    esac
-    STATE_STORAGE_ACCOUNT="st${APPLICATION_NAME}${ENV_NAME}${subscription_hash:0:8}"
-}
-
 while (($# > 0)); do
     case "$1" in
-        --dry-run)
-            mode="dry-run"
-            ;;
-        --apply)
-            mode="apply"
-            ;;
+        --dry-run) mode="dry-run" ;;
+        --apply) mode="apply" ;;
         --env-file|-f)
-            (($# >= 2)) || fail "--env-file requires a file path"
-            env_file="$2"
-            shift
-            ;;
-        --env-file=*)
-            env_file="${1#*=}"
-            ;;
-        --environment|-e)
-            (($# >= 2)) || fail "--environment requires an environment argument (homologation, production, or all)"
-            target_environment="${2,,}"
-            shift
-            ;;
-        --environment=*)
-            target_environment="${1#*=}"
-            target_environment="${target_environment,,}"
-            ;;
-        --skip-branch-protection)
-            skip_branch_protection="true"
-            ;;
+            (($# >= 2)) || fail "--env-file requires a path"
+            env_file="$2"; shift ;;
+        --env-file=*) env_file="${1#*=}" ;;
         --bootstrap-principal-object-id)
             (($# >= 2)) || fail "--bootstrap-principal-object-id requires an object ID"
-            bootstrap_principal_object_id="$2"
-            shift
-            ;;
+            bootstrap_principal_object_id="$2"; shift ;;
         --bootstrap-principal-type)
             (($# >= 2)) || fail "--bootstrap-principal-type requires a type"
-            bootstrap_principal_type="$2"
-            shift
-            ;;
-        --help|-h)
-            usage
-            exit 0
-            ;;
-        *)
-            fail "unknown argument: $1"
-            ;;
+            bootstrap_principal_type="$2"; shift ;;
+        --help|-h) usage; exit 0 ;;
+        *) fail "unknown argument: $1" ;;
     esac
     shift
 done
 
-case "$target_environment" in
-    homologation|production|all)
-        ;;
-    *)
-        fail "unknown environment '$target_environment'; allowed values: homologation, production, all"
-        ;;
-esac
-
-environments=()
-if [[ "$target_environment" == "homologation" || "$target_environment" == "all" ]]; then
-    environments+=("homologation")
-fi
-if [[ "$target_environment" == "production" || "$target_environment" == "all" ]]; then
-    environments+=("production")
-fi
-
-# Load environment file if present
 load_env_file "$env_file"
-
-# Auto-detect or default APIM metadata
-if [[ -z "${APIM_PUBLISHER_NAME:-}" ]]; then
-    APIM_PUBLISHER_NAME="CatCar Operations"
-fi
-if [[ -z "${APIM_PUBLISHER_EMAIL:-}" ]]; then
-    auto_email="$(az account show --query user.name -o tsv 2>/dev/null || true)"
-    if [[ "$auto_email" == *"@"* ]]; then
-        APIM_PUBLISHER_EMAIL="$auto_email"
-    else
-        APIM_PUBLISHER_EMAIL="operations@catcar.com"
-    fi
-fi
-
-# Auto-generate secure database passwords and JWT signing keys if not provided
-generated_secrets=()
-if [[ -z "${POSTGRES_ADMIN_PASSWORD:-}" ]]; then
-    POSTGRES_ADMIN_PASSWORD="$(generate_password)"
-    generated_secrets+=("POSTGRES_ADMIN_PASSWORD")
-fi
-if [[ -z "${POSTGRES_AUTH_READONLY_PASSWORD:-}" ]]; then
-    POSTGRES_AUTH_READONLY_PASSWORD="$(generate_password)"
-    generated_secrets+=("POSTGRES_AUTH_READONLY_PASSWORD")
-fi
-if [[ -z "${JWT_SECRET:-}" ]]; then
-    JWT_SECRET="$(generate_jwt_key)"
-    generated_secrets+=("JWT_SECRET")
-fi
-if [[ -z "${CUSTOMER_JWT_SIGNING_KEY:-}" ]]; then
-    CUSTOMER_JWT_SIGNING_KEY="$(generate_jwt_key)"
-    generated_secrets+=("CUSTOMER_JWT_SIGNING_KEY")
-fi
-if [[ "$target_environment" == "all" ]]; then
-    if [[ -z "${JWT_SECRET_HOMOLOG:-}" ]]; then
-        JWT_SECRET_HOMOLOG="$(generate_jwt_key)"
-        generated_secrets+=("JWT_SECRET_HOMOLOG")
-    fi
-    if [[ -z "${CUSTOMER_JWT_SIGNING_KEY_HOMOLOG:-}" ]]; then
-        CUSTOMER_JWT_SIGNING_KEY_HOMOLOG="$(generate_jwt_key)"
-        generated_secrets+=("CUSTOMER_JWT_SIGNING_KEY_HOMOLOG")
-    fi
-    if [[ -z "${JWT_SECRET_PROD:-}" ]]; then
-        JWT_SECRET_PROD="$(generate_jwt_key)"
-        generated_secrets+=("JWT_SECRET_PROD")
-    fi
-    if [[ -z "${CUSTOMER_JWT_SIGNING_KEY_PROD:-}" ]]; then
-        CUSTOMER_JWT_SIGNING_KEY_PROD="$(generate_jwt_key)"
-        generated_secrets+=("CUSTOMER_JWT_SIGNING_KEY_PROD")
-    fi
-fi
-export APIM_PUBLISHER_NAME APIM_PUBLISHER_EMAIL POSTGRES_ADMIN_PASSWORD POSTGRES_AUTH_READONLY_PASSWORD JWT_SECRET CUSTOMER_JWT_SIGNING_KEY
-
 require_command az
 require_command gh
+require_command jq
 require_command sha256sum
 
 subscription_id="$(az account show --query id --output tsv)"
 tenant_id="$(az account show --query tenantId --output tsv)"
-github_repository="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
-[[ -n "$subscription_id" ]] || fail "Azure CLI did not return a subscription ID"
-[[ -n "$tenant_id" ]] || fail "Azure CLI did not return a tenant ID"
-[[ "$github_repository" =~ ^[[:alnum:]_.-]+/[[:alnum:]_.-]+$ ]] || fail "GitHub CLI returned an invalid repository name: $github_repository"
+[[ -n "$subscription_id" && -n "$tenant_id" ]] || fail "select an Azure subscription and tenant"
+repo_id="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.id')"
+owner_id="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.owner.id')"
+[[ "$repo_id" == 1376139605 && "$owner_id" == 330941078 ]] || fail "GitHub repository identity changed"
+prefix="$(gh api "repos/$GITHUB_REPOSITORY/actions/oidc/customization/sub" --jq '.sub_claim_prefix // empty')"
+[[ "$prefix" == "$EXPECTED_PREFIX" ]] || fail "unexpected GitHub OIDC sub_claim_prefix; verify the repository's immutable subject configuration"
 
-github_owner="${GITHUB_ORG:-${github_repository%%/*}}"
+AZURE_LOCATION="${AZURE_LOCATION:-brazilsouth}"
+STATE_RG="${AZURE_TF_STATE_RG:-rg-catcar-tfstate}"
+STATE_STORAGE_ACCOUNT="${AZURE_TF_STATE_STORAGE_ACCOUNT:-stcatcartf3c4128ef}"
+STATE_CONTAINER="${TF_BACKEND_CONTAINER:-$STATE_CONTAINER_DEFAULT}"
+FOUNDATION_RG="rg-catcar"
+WORKLOAD_RG="$FOUNDATION_RG"
 
-if [[ -n "${REPOSITORIES:-}" ]]; then
-    IFS=' ' read -r -a target_repos <<< "$REPOSITORIES"
-else
-    target_repos=("${DEFAULT_REPOSITORIES[@]}")
-fi
-
-all_target_repos=()
-for repo in "${target_repos[@]}"; do
-    [[ -z "$repo" ]] && continue
-    if [[ "$repo" == *"/"* ]]; then
-        all_target_repos+=("$repo")
-    else
-        all_target_repos+=("${github_owner}/${repo}")
-    fi
-done
-repo_already_present=false
-for r in "${all_target_repos[@]}"; do
-    if [[ "$r" == "$github_repository" ]]; then
-        repo_already_present=true
-        break
-    fi
-done
-if [[ "$repo_already_present" == "false" ]]; then
-    all_target_repos+=("${github_repository}")
-fi
-
-for target_repo in "${all_target_repos[@]}"; do
-    preflight_self_hosted_runner "$target_repo"
-done
-
-if [[ -z "$AZURE_LOCATION" ]]; then
-    if az group exists --name "catcar-prod" --subscription "$subscription_id" --output tsv 2>/dev/null | grep -q true; then
-        AZURE_LOCATION="$(az group show --name "catcar-prod" --subscription "$subscription_id" --query location --output tsv)"
-    elif az group exists --name "catcar-homolog" --subscription "$subscription_id" --output tsv 2>/dev/null | grep -q true; then
-        AZURE_LOCATION="$(az group show --name "catcar-homolog" --subscription "$subscription_id" --query location --output tsv)"
-    else
-        AZURE_LOCATION="brazilsouth"
-    fi
-fi
-[[ -n "$AZURE_LOCATION" ]] || fail "AZURE_LOCATION must not be empty"
-
-subscription_hash="$(printf '%s' "$subscription_id" | sha256sum)"
-subscription_hash="${subscription_hash%% *}"
-
-printf '==============================================================================\n'
-printf 'CatCar Azure & GitHub Bootstrap: mode=%s, target_environment=%s\n' "$mode" "$target_environment"
-printf 'Subscription: %s | Tenant: %s | Location: %s\n' "$subscription_id" "$tenant_id" "$AZURE_LOCATION"
-printf 'Target GitHub Repositories:\n'
-for r in "${all_target_repos[@]}"; do
-    printf '  - %s\n' "$r"
-done
-printf '\nPlanned Azure Infrastructure & Workload Identities:\n'
-printf '  - Shared Plan App: %s (Reader at subscription, Storage Blob Contributor on state)\n' "$PLAN_APPLICATION_NAME"
-for env in "${environments[@]}"; do
-    get_env_config "$env"
-    printf '  [%s]\n' "$env"
-    printf '    Foundation RG: %s\n' "$FOUNDATION_RG"
-    printf '    Workload RG:   %s\n' "$WORKLOAD_RG"
-    printf '    State Backend: %s / %s / %s\n' "$STATE_RG" "$STATE_STORAGE_ACCOUNT" "$STATE_CONTAINER"
-    printf '    Deploy App:    %s\n' "$DEPLOY_APP_NAME"
-    printf '    AKS Cluster:   %s | ACR: %s | Key Vault: %s\n' "$AKS_CLUSTER_NAME" "$ACR_NAME" "$KEY_VAULT_NAME"
-done
-
-printf '\nPlanned GitHub Actions Configurations (across all target repositories):\n'
-printf '  1. Repository-level Variables:\n'
-printf '     - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_LOCATION\n'
-printf '     - CATCAR_FOUNDATION_RESOURCE_GROUP, APIM_PUBLISHER_NAME, APIM_PUBLISHER_EMAIL\n'
-printf '     - AZURE_TF_STATE_RG, AZURE_TF_STATE_STORAGE_ACCOUNT\n'
-
-if [[ "$skip_branch_protection" == "true" ]]; then
-    printf '  2. Branch Protection Rules: SKIPPED (--skip-branch-protection specified)\n'
-else
-    printf '  2. Branch Protection Rules:\n'
-    printf '     - main:    Require PR review (1 approver), dismiss stale reviews, disallow force push/deletion\n'
-    printf '     - develop: Require PR review (1 approver), dismiss stale reviews, disallow force push/deletion\n'
-fi
-
-printf '  3. GitHub Environments & Configurations:\n'
-for env in "${environments[@]}"; do
-    get_env_config "$env"
-    printf '     - %s:\n' "$GH_ENV"
-    printf '         Variables: AZURE_DEPLOY_CLIENT_ID, CATCAR_FOUNDATION_RESOURCE_GROUP, ASPIRE_WORKLOAD_RESOURCE_GROUP,\n'
-    printf '                    TF_BACKEND_RESOURCE_GROUP, TF_BACKEND_STORAGE_ACCOUNT, TF_BACKEND_CONTAINER,\n'
-    printf '                    AZURE_TF_STATE_RG, AZURE_TF_STATE_STORAGE_ACCOUNT, AZURE_LOCATION,\n'
-    printf '                    APIM_PUBLISHER_NAME, APIM_PUBLISHER_EMAIL, CATCAR_AKS_CLUSTER_NAME,\n'
-    printf '                    ACR_NAME, KEY_VAULT_NAME, CATCAR_LOG_ANALYTICS_WORKSPACE_NAME,\n'
-    printf '                    CATCAR_APPLICATION_INSIGHTS_NAME\n'
-    printf '         Secrets:   POSTGRES_ADMIN_PASSWORD, POSTGRES_AUTH_READONLY_PASSWORD,\n'
-    printf '                    JWT_SECRET, CUSTOMER_JWT_SIGNING_KEY\n'
-done
-
-printf '\nSecrets & Configuration Source:\n'
-printf '  APIM_PUBLISHER_NAME:             %s\n' "$APIM_PUBLISHER_NAME"
-printf '  APIM_PUBLISHER_EMAIL:            %s\n' "$APIM_PUBLISHER_EMAIL"
-if is_auto_generated "POSTGRES_ADMIN_PASSWORD"; then
-    printf '  POSTGRES_ADMIN_PASSWORD:         [AUTO-GENERATED: will save to %s on --apply]\n' "$env_file"
-else
-    printf '  POSTGRES_ADMIN_PASSWORD:         [CONFIGURED via environment/%s]\n' "$env_file"
-fi
-if is_auto_generated "POSTGRES_AUTH_READONLY_PASSWORD"; then
-    printf '  POSTGRES_AUTH_READONLY_PASSWORD: [AUTO-GENERATED: will save to %s on --apply]\n' "$env_file"
-else
-    printf '  POSTGRES_AUTH_READONLY_PASSWORD: [CONFIGURED via environment/%s]\n' "$env_file"
-fi
-if is_auto_generated "JWT_SECRET"; then
-    printf '  JWT_SECRET:                      [AUTO-GENERATED: will save to %s on --apply]\n' "$env_file"
-else
-    printf '  JWT_SECRET:                      [CONFIGURED via environment/%s]\n' "$env_file"
-fi
-if is_auto_generated "CUSTOMER_JWT_SIGNING_KEY"; then
-    printf '  CUSTOMER_JWT_SIGNING_KEY:        [AUTO-GENERATED: will save to %s on --apply]\n' "$env_file"
-else
-    printf '  CUSTOMER_JWT_SIGNING_KEY:        [CONFIGURED via environment/%s]\n' "$env_file"
-fi
-
+printf 'Mode: %s\nSubscription: %s\nTenant: %s\nLocation: %s\n' "$mode" "$subscription_id" "$tenant_id" "$AZURE_LOCATION"
+printf 'Repository/environment: %s / %s\nOIDC subject: %s:environment:%s\n' "$GITHUB_REPOSITORY" "$GH_ENV" "$prefix" "$GH_ENV"
+printf 'State: %s / %s / %s\nFoundation RG: %s\nWorkload RG: %s\n' "$STATE_RG" "$STATE_STORAGE_ACCOUNT" "$STATE_CONTAINER" "$FOUNDATION_RG" "$WORKLOAD_RG"
+printf 'Deploy identity: %s; RG-scoped Contributor, User Access Administrator, AKS RBAC Cluster Admin, AcrPush and Key Vault Secrets Officer; state account Blob Data Contributor.\n' "$DEPLOY_APPLICATION_NAME"
+printf 'GitHub environment policy: custom tags v* only; workflow enforces strict release tag syntax.\n'
+printf 'Environment variables: AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_DEPLOY_CLIENT_ID AZURE_LOCATION AZURE_TF_STATE_RG AZURE_TF_STATE_STORAGE_ACCOUNT TF_BACKEND_CONTAINER APIM_PUBLISHER_NAME APIM_PUBLISHER_EMAIL CATCAR_ALERT_EMAIL\n'
+printf 'Environment secrets: POSTGRES_ADMIN_PASSWORD POSTGRES_AUTH_READONLY_PASSWORD JWT_SECRET CUSTOMER_JWT_SIGNING_KEY BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD SMOKE_CUSTOMER_EMAIL\n'
 if [[ "$mode" == "dry-run" ]]; then
-    cat <<EOF
-DRY-RUN completed. No Azure, Microsoft Entra, or GitHub configuration was changed.
-Re-run with --apply to apply all changes.
-(Any auto-generated secrets will be saved to $env_file with permissions 0600 on --apply).
-EOF
+    printf 'Preview only; no Azure or GitHub changes made. Use --apply after preflight.\n'
     exit 0
 fi
 
-# Apply Mode Validations
-require_nonempty_environment APIM_PUBLISHER_NAME
-require_nonempty_environment APIM_PUBLISHER_EMAIL
-[[ "$APIM_PUBLISHER_EMAIL" == *"@"* ]] || fail "APIM_PUBLISHER_EMAIL must contain @"
-require_command terraform
-
-# Persist effective secrets and configuration to .env file
-save_env_file "$env_file"
-
-for env in "${environments[@]}"; do
-    get_env_config "$env"
-    [[ -n "$ENV_POSTGRES_ADMIN_PASSWORD" && ${#ENV_POSTGRES_ADMIN_PASSWORD} -ge 12 ]] \
-        || fail "Environment $env requires POSTGRES_ADMIN_PASSWORD (or POSTGRES_ADMIN_PASSWORD_${ENV_NAME^^}) with at least 12 characters"
-    [[ -n "$ENV_POSTGRES_AUTH_READONLY_PASSWORD" && ${#ENV_POSTGRES_AUTH_READONLY_PASSWORD} -ge 12 ]] \
-        || fail "Environment $env requires POSTGRES_AUTH_READONLY_PASSWORD (or POSTGRES_AUTH_READONLY_PASSWORD_${ENV_NAME^^}) with at least 12 characters"
-    [[ -n "$ENV_JWT_SECRET" && ${#ENV_JWT_SECRET} -ge 32 ]] \
-        || fail "Environment $env requires JWT_SECRET (or JWT_SECRET_${ENV_NAME^^}) with at least 32 characters"
-    [[ -n "$ENV_CUSTOMER_JWT_SIGNING_KEY" && ${#ENV_CUSTOMER_JWT_SIGNING_KEY} -ge 32 ]] \
-        || fail "Environment $env requires CUSTOMER_JWT_SIGNING_KEY (or CUSTOMER_JWT_SIGNING_KEY_${ENV_NAME^^}) with at least 32 characters"
+[[ "${STATE_PREFLIGHT_CONFIRMED:-}" == "true" ]] || fail "review existing state and resource ownership, then set STATE_PREFLIGHT_CONFIRMED=true"
+for name in APIM_PUBLISHER_NAME APIM_PUBLISHER_EMAIL CATCAR_ALERT_EMAIL POSTGRES_ADMIN_PASSWORD POSTGRES_AUTH_READONLY_PASSWORD JWT_SECRET CUSTOMER_JWT_SIGNING_KEY BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD SMOKE_CUSTOMER_EMAIL; do
+    require_nonempty_environment "$name"
 done
-
+[[ "$APIM_PUBLISHER_EMAIL" == *@* && "$CATCAR_ALERT_EMAIL" == *@* ]] || fail "publisher and alert email addresses must contain @"
+[[ ${#POSTGRES_ADMIN_PASSWORD} -ge 12 && ${#POSTGRES_AUTH_READONLY_PASSWORD} -ge 12 ]] || fail "PostgreSQL passwords must contain at least 12 characters"
+[[ ${#JWT_SECRET} -ge 32 && ${#CUSTOMER_JWT_SIGNING_KEY} -ge 32 ]] || fail "JWT signing keys must contain at least 32 characters"
 if [[ -z "$bootstrap_principal_object_id" ]]; then
     bootstrap_principal_object_id="$(az ad signed-in-user show --query id --output tsv)"
 fi
-[[ "$bootstrap_principal_object_id" =~ ^[0-9a-fA-F-]{36}$ ]] \
-    || fail "bootstrap principal object ID must be a Microsoft Entra object ID"
+[[ "$bootstrap_principal_object_id" =~ ^[0-9a-fA-F-]{36}$ ]] || fail "bootstrap principal object ID must be a Microsoft Entra object ID"
 case "$bootstrap_principal_type" in
-    User|ServicePrincipal|Group|ForeignGroup)
-        ;;
-    *)
-        fail "bootstrap principal type must be User, ServicePrincipal, Group, or ForeignGroup"
-        ;;
+    User|ServicePrincipal|Group|ForeignGroup) ;;
+    *) fail "invalid bootstrap principal type" ;;
 esac
 
-# 1. Ensure Shared Plan Application (catcar-github-terraform-plan)
-printf '\n--- Setting up Plan Identity: %s ---\n' "$PLAN_APPLICATION_NAME"
-ensure_application "$PLAN_APPLICATION_NAME"
-plan_client_id="$application_client_id"
+# Refuse to weaken an existing environment or retain policies broader than v*.
+environment_json="$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments?per_page=100" --jq ".environments[] | select(.name == \"$GH_ENV\")")"
+if [[ -n "$environment_json" ]]; then
+    [[ "$(jq -r '.deployment_branch_policy.custom_branch_policies // false' <<< "$environment_json")" == true ]] \
+        || fail "existing azure environment must already use custom deployment policies; configure it without removing its protection rules"
+    policies="$(gh api --paginate "repos/$GITHUB_REPOSITORY/environments/$GH_ENV/deployment-branch-policies?per_page=100" --jq '.branch_policies[] | [.type, .name] | @tsv')"
+    if [[ -n "$policies" ]] && [[ "$policies" != $'tag\tv*' ]]; then
+        fail "existing azure deployment policies are not exclusively the v* tag policy; review them manually"
+    fi
+else
+    policies=""
+fi
+
+ensure_resource_group "$STATE_RG" azure
+ensure_resource_group "$FOUNDATION_RG" azure
+ensure_resource_group "$WORKLOAD_RG" azure
+ensure_storage_account "$STATE_STORAGE_ACCOUNT" "$STATE_RG" azure
+ensure_role_assignment "$bootstrap_principal_object_id" "$bootstrap_principal_type" "Storage Blob Data Contributor" "$state_storage_account_id"
+create_state_container "$STATE_STORAGE_ACCOUNT"
+
+ensure_application "$DEPLOY_APPLICATION_NAME"
+deploy_client_id="$application_client_id"
 ensure_service_principal
-plan_service_principal_object_id="$service_principal_object_id"
-ensure_role_assignment "$plan_service_principal_object_id" "ServicePrincipal" "Reader" "/subscriptions/$subscription_id"
-
-declare -A deploy_client_ids=()
-
-for target_repo in "${all_target_repos[@]}"; do
-    repo_slug="${target_repo##*/}"
-    clean_slug="${repo_slug//[^a-zA-Z0-9_-]/-}"
-    ensure_federated_credential "gh-${clean_slug}-pr" "repo:${target_repo}:pull_request"
-    ensure_federated_credential "gh-${clean_slug}-main" "repo:${target_repo}:ref:refs/heads/main"
-    ensure_federated_credential "gh-${clean_slug}-develop" "repo:${target_repo}:ref:refs/heads/develop"
+deploy_principal_id="$service_principal_object_id"
+ensure_federated_credential "gh-platform-azure" "${prefix}:environment:${GH_ENV}"
+foundation_id="$(az group show --name "$FOUNDATION_RG" --subscription "$subscription_id" --query id --output tsv)"
+for role in "Contributor" "User Access Administrator" "Azure Kubernetes Service RBAC Cluster Admin" "AcrPush" "Key Vault Secrets Officer"; do
+    ensure_role_assignment "$deploy_principal_id" "ServicePrincipal" "$role" "$foundation_id"
 done
+ensure_role_assignment "$deploy_principal_id" "ServicePrincipal" "Storage Blob Data Contributor" "$state_storage_account_id"
 
-# Detect Kubernetes Terraform directory if present locally
-k8s_tf_dir=""
-if [[ -d "catcar-kubernetes-infra" && -f "catcar-kubernetes-infra/main.tf" ]]; then
-    k8s_tf_dir="catcar-kubernetes-infra"
-elif [[ -f "main.tf" && -f "variables.tf" && -f "apim-policy.xml" ]]; then
-    k8s_tf_dir="."
-elif [[ -d "infra/kubernetes" && -f "infra/kubernetes/main.tf" ]]; then
-    k8s_tf_dir="infra/kubernetes"
+if [[ -z "$environment_json" ]]; then
+    printf '%s\n' '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' \
+        | gh api --method PUT "repos/$GITHUB_REPOSITORY/environments/$GH_ENV" --input - --silent
 fi
-
-# 2. Iterate and Provision Environments in Azure
-for env in "${environments[@]}"; do
-    get_env_config "$env"
-    printf '\n==============================================================================\n'
-    printf 'Provisioning Azure Control Plane: %s (%s)\n' "$env" "$ENV_NAME"
-    printf '==============================================================================\n'
-
-    ensure_resource_group "$STATE_RG" "$ENV_NAME"
-    ensure_resource_group "$FOUNDATION_RG" "$ENV_NAME"
-    ensure_resource_group "$WORKLOAD_RG" "$ENV_NAME"
-
-    ensure_storage_account "$STATE_STORAGE_ACCOUNT" "$STATE_RG" "$ENV_NAME"
-    ensure_role_assignment "$bootstrap_principal_object_id" "$bootstrap_principal_type" "Storage Blob Data Contributor" "$state_storage_account_id"
-    ensure_role_assignment "$plan_service_principal_object_id" "ServicePrincipal" "Storage Blob Data Contributor" "$state_storage_account_id"
-    create_state_container "$STATE_STORAGE_ACCOUNT"
-
-    printf '\n--- Setting up Deploy Identity: %s ---\n' "$DEPLOY_APP_NAME"
-    ensure_application "$DEPLOY_APP_NAME"
-    deploy_client_id="$application_client_id"
-    deploy_client_ids["$env"]="$deploy_client_id"
-    ensure_service_principal
-    deploy_service_principal_object_id="$service_principal_object_id"
-
-    for target_repo in "${all_target_repos[@]}"; do
-        repo_slug="${target_repo##*/}"
-        clean_slug="${repo_slug//[^a-zA-Z0-9_-]/-}"
-        if [[ "$env" == "homologation" ]]; then
-            ensure_federated_credential "gh-${clean_slug}-homolog-env" "repo:${target_repo}:environment:homologation"
-            ensure_federated_credential "gh-${clean_slug}-develop" "repo:${target_repo}:ref:refs/heads/develop"
-        else
-            ensure_federated_credential "gh-${clean_slug}-prod-env" "repo:${target_repo}:environment:production"
-            ensure_federated_credential "gh-${clean_slug}-main" "repo:${target_repo}:ref:refs/heads/main"
-        fi
-    done
-
-    foundation_resource_group_id="$(az group show --name "$FOUNDATION_RG" --subscription "$subscription_id" --query id --output tsv)"
-    workload_resource_group_id="$(az group show --name "$WORKLOAD_RG" --subscription "$subscription_id" --query id --output tsv)"
-    ensure_role_assignment "$deploy_service_principal_object_id" "ServicePrincipal" "Contributor" "$foundation_resource_group_id"
-    ensure_role_assignment "$deploy_service_principal_object_id" "ServicePrincipal" "User Access Administrator" "$foundation_resource_group_id"
-    ensure_role_assignment "$deploy_service_principal_object_id" "ServicePrincipal" "Azure Kubernetes Service RBAC Cluster Admin" "$foundation_resource_group_id"
-    ensure_role_assignment "$deploy_service_principal_object_id" "ServicePrincipal" "Contributor" "$workload_resource_group_id"
-    ensure_role_assignment "$deploy_service_principal_object_id" "ServicePrincipal" "Storage Blob Data Contributor" "$state_storage_account_id"
-    ensure_role_assignment "$deploy_service_principal_object_id" "ServicePrincipal" "AcrPush" "$foundation_resource_group_id"
-    ensure_role_assignment "$deploy_service_principal_object_id" "ServicePrincipal" "Key Vault Secrets Officer" "$foundation_resource_group_id"
-
-    # Optional local Terraform import
-    if [[ -n "$k8s_tf_dir" ]]; then
-        printf '\n--- Checking local Kubernetes Terraform state for %s ---\n' "$STATE_KEY"
-        export TF_VAR_resource_group_name="$FOUNDATION_RG"
-        export TF_VAR_location="$AZURE_LOCATION"
-        export TF_VAR_apim_publisher_name="$APIM_PUBLISHER_NAME"
-        export TF_VAR_apim_publisher_email="$APIM_PUBLISHER_EMAIL"
-        export TF_VAR_customer_jwt_signing_key="$ENV_CUSTOMER_JWT_SIGNING_KEY"
-
-        if terraform -chdir="$k8s_tf_dir" init -input=false -reconfigure \
-            -backend-config="resource_group_name=$STATE_RG" \
-            -backend-config="storage_account_name=$STATE_STORAGE_ACCOUNT" \
-            -backend-config="container_name=$STATE_CONTAINER" \
-            -backend-config="key=$STATE_KEY" \
-            -backend-config="use_azuread_auth=true" 2>/dev/null; then
-
-            terraform_state_addresses="$(terraform -chdir="$k8s_tf_dir" state list 2>/dev/null || true)"
-            if [[ $'\n'"$terraform_state_addresses"$'\n' == *$'\nazurerm_resource_group.this\n'* ]]; then
-                printf 'Terraform state %s already owns %s.\n' "$STATE_KEY" "$FOUNDATION_RG"
-            else
-                printf 'Importing existing resource group %s into Kubernetes Terraform state (%s).\n' "$FOUNDATION_RG" "$STATE_KEY"
-                terraform -chdir="$k8s_tf_dir" import -input=false \
-                    azurerm_resource_group.this \
-                    "/subscriptions/$subscription_id/resourceGroups/$FOUNDATION_RG" 2>/dev/null || true
-            fi
-        else
-            printf 'Note: could not initialize Terraform backend for state %s; skipping state import.\n' "$STATE_KEY"
-        fi
-    fi
-done
-
-# 3. Configure GitHub Repositories (Variables, Branch Protection, Environments & Secrets)
-printf '\n==============================================================================\n'
-printf 'Configuring GitHub Repositories (Variables, Branch Protection, Environments)\n'
-printf '==============================================================================\n'
-
-if ((${#environments[@]} == 1)); then
-    get_env_config "${environments[0]}"
+if [[ -z "$policies" ]]; then
+    gh api --method POST "repos/$GITHUB_REPOSITORY/environments/$GH_ENV/deployment-branch-policies" \
+        -f name='v*' -f type=tag --silent
 fi
-
-for target_repo in "${all_target_repos[@]}"; do
-    if ! gh repo view "$target_repo" >/dev/null 2>&1; then
-        printf 'warning: repository %s is not accessible via gh; skipping.\n' "$target_repo" >&2
-        continue
-    fi
-
-    printf '\n--- Configuring GitHub repository: %s ---\n' "$target_repo"
-
-    # Repository-level variables
-    printf 'Setting repository-level variables on %s...\n' "$target_repo"
-    set_repo_variable "$target_repo" AZURE_CLIENT_ID "$plan_client_id"
-    set_repo_variable "$target_repo" AZURE_TENANT_ID "$tenant_id"
-    set_repo_variable "$target_repo" AZURE_SUBSCRIPTION_ID "$subscription_id"
-    set_repo_variable "$target_repo" AZURE_LOCATION "$AZURE_LOCATION"
-    set_repo_variable "$target_repo" APIM_PUBLISHER_NAME "$APIM_PUBLISHER_NAME"
-    set_repo_variable "$target_repo" APIM_PUBLISHER_EMAIL "$APIM_PUBLISHER_EMAIL"
-    if ((${#environments[@]} == 1)); then
-        set_repo_variable "$target_repo" CATCAR_FOUNDATION_RESOURCE_GROUP "$FOUNDATION_RG"
-        set_repo_variable "$target_repo" AZURE_TF_STATE_RG "$STATE_RG"
-        set_repo_variable "$target_repo" AZURE_TF_STATE_STORAGE_ACCOUNT "$STATE_STORAGE_ACCOUNT"
-    else
-        printf 'Skipping environment-specific repository defaults on %s because multiple environments were requested.\n' "$target_repo"
-    fi
-
-    # Branch Protection Rules (main and develop)
-    if [[ "$skip_branch_protection" != "true" ]]; then
-        ensure_branch_protection "$target_repo" "main"
-        ensure_branch_protection "$target_repo" "develop"
-    fi
-
-    # Environment-scoped configurations
-    for env in "${environments[@]}"; do
-        get_env_config "$env"
-        printf 'Configuring environment %s on %s...\n' "$GH_ENV" "$target_repo"
-
-        # Create GitHub environment
-        gh api --method PUT "repos/$target_repo/environments/$GH_ENV" --silent 2>/dev/null || true
-
-        # Environment-scoped variables
-        set_env_variable "$target_repo" "$GH_ENV" AZURE_DEPLOY_CLIENT_ID "${deploy_client_ids[$env]}"
-        set_env_variable "$target_repo" "$GH_ENV" CATCAR_FOUNDATION_RESOURCE_GROUP "$FOUNDATION_RG"
-        set_env_variable "$target_repo" "$GH_ENV" ASPIRE_WORKLOAD_RESOURCE_GROUP "$WORKLOAD_RG"
-        set_env_variable "$target_repo" "$GH_ENV" TF_BACKEND_RESOURCE_GROUP "$STATE_RG"
-        set_env_variable "$target_repo" "$GH_ENV" TF_BACKEND_STORAGE_ACCOUNT "$STATE_STORAGE_ACCOUNT"
-        set_env_variable "$target_repo" "$GH_ENV" TF_BACKEND_CONTAINER "$STATE_CONTAINER"
-        set_env_variable "$target_repo" "$GH_ENV" AZURE_TF_STATE_RG "$STATE_RG"
-        set_env_variable "$target_repo" "$GH_ENV" AZURE_TF_STATE_STORAGE_ACCOUNT "$STATE_STORAGE_ACCOUNT"
-        set_env_variable "$target_repo" "$GH_ENV" AZURE_LOCATION "$AZURE_LOCATION"
-        set_env_variable "$target_repo" "$GH_ENV" APIM_PUBLISHER_NAME "$APIM_PUBLISHER_NAME"
-        set_env_variable "$target_repo" "$GH_ENV" APIM_PUBLISHER_EMAIL "$APIM_PUBLISHER_EMAIL"
-        set_env_variable "$target_repo" "$GH_ENV" CATCAR_AKS_CLUSTER_NAME "$AKS_CLUSTER_NAME"
-        set_env_variable "$target_repo" "$GH_ENV" ACR_NAME "$ACR_NAME"
-        set_env_variable "$target_repo" "$GH_ENV" KEY_VAULT_NAME "$KEY_VAULT_NAME"
-        set_env_variable "$target_repo" "$GH_ENV" CATCAR_LOG_ANALYTICS_WORKSPACE_NAME "$LOG_ANALYTICS_NAME"
-        set_env_variable "$target_repo" "$GH_ENV" CATCAR_APPLICATION_INSIGHTS_NAME "$APP_INSIGHTS_NAME"
-
-        # Environment-scoped secrets
-        set_env_secret "$target_repo" "$GH_ENV" POSTGRES_ADMIN_PASSWORD "$ENV_POSTGRES_ADMIN_PASSWORD"
-        set_env_secret "$target_repo" "$GH_ENV" POSTGRES_AUTH_READONLY_PASSWORD "$ENV_POSTGRES_AUTH_READONLY_PASSWORD"
-        set_env_secret "$target_repo" "$GH_ENV" JWT_SECRET "$ENV_JWT_SECRET"
-        set_env_secret "$target_repo" "$GH_ENV" CUSTOMER_JWT_SIGNING_KEY "$ENV_CUSTOMER_JWT_SIGNING_KEY"
-    done
+set_env_variable "$GITHUB_REPOSITORY" "$GH_ENV" AZURE_TENANT_ID "$tenant_id"
+set_env_variable "$GITHUB_REPOSITORY" "$GH_ENV" AZURE_SUBSCRIPTION_ID "$subscription_id"
+set_env_variable "$GITHUB_REPOSITORY" "$GH_ENV" AZURE_DEPLOY_CLIENT_ID "$deploy_client_id"
+set_env_variable "$GITHUB_REPOSITORY" "$GH_ENV" AZURE_LOCATION "$AZURE_LOCATION"
+set_env_variable "$GITHUB_REPOSITORY" "$GH_ENV" AZURE_TF_STATE_RG "$STATE_RG"
+set_env_variable "$GITHUB_REPOSITORY" "$GH_ENV" AZURE_TF_STATE_STORAGE_ACCOUNT "$STATE_STORAGE_ACCOUNT"
+set_env_variable "$GITHUB_REPOSITORY" "$GH_ENV" TF_BACKEND_CONTAINER "$STATE_CONTAINER"
+for name in APIM_PUBLISHER_NAME APIM_PUBLISHER_EMAIL CATCAR_ALERT_EMAIL; do
+    set_env_variable "$GITHUB_REPOSITORY" "$GH_ENV" "$name" "${!name}"
 done
-
-printf '\n==============================================================================\n'
-printf 'CatCar Azure & GitHub Bootstrap completed successfully for: %s\n' "$target_environment"
-printf '==============================================================================\n'
+for name in POSTGRES_ADMIN_PASSWORD POSTGRES_AUTH_READONLY_PASSWORD JWT_SECRET CUSTOMER_JWT_SIGNING_KEY BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD SMOKE_CUSTOMER_EMAIL; do
+    set_env_secret "$GITHUB_REPOSITORY" "$GH_ENV" "$name" "${!name}"
+done
+printf 'Azure release bootstrap complete for %s / %s.\n' "$GITHUB_REPOSITORY" "$GH_ENV"

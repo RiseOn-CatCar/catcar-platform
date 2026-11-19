@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-09-18
 
+> Historical decision: the original branch-specific deployments described below have been superseded by the [coordinated release process](../../release-process.md). The four repositories now run CI only; strict version tags in the platform repository deploy the single Azure environment after the release gates. Kind validation is local only.
+
 ## Context
 
 The Phase 3 Tech Challenge specifications require splitting the CatCar system into four segregated, independently deployable Git repositories:

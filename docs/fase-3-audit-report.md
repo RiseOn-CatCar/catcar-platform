@@ -9,6 +9,10 @@
 3. `catcar-database-infra` (Terraform IaC — PostgreSQL Flexible Server & Key Vault)
 4. `catcar-kubernetes-infra` (Terraform IaC — AKS, ACR, APIM, VNet, Alertas & Workbooks)
 
+> **Revalidação em 16/11/2026:** este documento é histórico. Consulte a
+> [auditoria consolidada das fases 1, 2 e 3](fases-1-2-3-audit-report.md)
+> para o estado da árvore atual, verificações executadas e critérios de entrada na fase 4.
+
 ---
 
 ## 1. Resumo Executivo & Diagnóstico Geral

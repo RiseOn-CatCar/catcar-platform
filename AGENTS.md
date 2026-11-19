@@ -149,6 +149,15 @@ make git-sync
 
 # Run Azure control-plane bootstrap (Resource Groups, Storage, Entra OIDC Apps, RBAC, GitHub secrets)
 ./scripts/bootstrap-azure.sh
+
+# Optional local-only Kind validation; its evidence is not release evidence
+make kind-up
+make kind-validate
+
+# Azure deployments are coordinated only by strict version tags in the platform repository.
+# Required CI jobs: Component Checks, Pinned Integration (E2E), Release Images (Trivy).
+# PR-head checks are review-only; merge component PRs and repin checked main commits before tagging.
+# See docs/release-process.md and docs/azure-bootstrap.md; bootstrap defaults to preview.
 ```
 
 ### Build & Run Commands
@@ -306,7 +315,7 @@ Features/WorkOrders/OpenWorkOrder/
 
 ### Test Frameworks & Libraries
 - **Unit / Feature Testing**: `xUnit` (`2.9.3`) with `[Fact]` and `[Theory]`.
-- **Assertions**: `FluentAssertions` (`8.11.0` - pinned to v8.x for Apache-2.0 license compatibility).
+- **Assertions**: `FluentAssertions` (`8.11.0`); its v8 license permits this public, non-commercial academic use and is not Apache-2.0.
 - **Mocking**: `NSubstitute` (`6.2.0`) for test doubles (`Substitute.For<T>()`).
 - **Integration Testing**: `Testcontainers.PostgreSql` (`4.15.0`) spinning up ephemeral `postgres:17-alpine` Docker containers to test real PostgreSQL schemas, `xmin` concurrency, and Wolverine outbox tables.
 - **Architecture Enforcement**: `NetArchTest.Rules` (`1.3.2`) enforcing DDD boundaries, cross-context isolation, and layer direction.

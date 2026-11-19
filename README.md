@@ -82,7 +82,7 @@ flowchart TD
 
 ## System Architecture & Cloud Topology
 
-In cloud environments (Homologation and Production), external traffic passes through an Azure API Management gateway that secures, inspects, and routes requests to the appropriate compute layer. The modular monolith executes inside Azure Kubernetes Service (AKS), while customer authentication is handled serverlessly via Azure Functions.
+In the single Azure environment, external traffic passes through Azure API Management. The modular monolith runs in Azure Kubernetes Service (AKS), while customer authentication is handled by Azure Functions. Kind is local-only; CI builds and scans release images, and only strict version tags in this platform repository initiate Azure deployment.
 
 ```mermaid
 flowchart TB
@@ -312,6 +312,8 @@ The platform includes a standardized GNU `Makefile` configured with strict shell
 | `make build` | Compiles application and function solutions | `dotnet build` on `catcar-app/CatCar.slnx` and `catcar-auth-function/CatCar.AuthFunction.slnx` |
 | `make test` | Runs unit and integration test suites | `dotnet test` on `catcar-app/CatCar.slnx` and `catcar-auth-function/CatCar.AuthFunction.slnx` |
 | `make dev` | Launches local platform via Aspire AppHost | `dotnet run --project catcar-app/src/Host/CatCar.AppHost/CatCar.AppHost.csproj` |
+| `make kind-up` | Starts or reuses the local Kind cluster and registry | `scripts/kind-with-registry.sh` |
+| `make kind-validate` | Validates the pinned platform locally | `scripts/validate-kind.sh` |
 | `make format` | Formats C# code and Terraform configurations | `dotnet format` on both solutions and `terraform fmt -recursive` on both infra modules |
 | `make infra-validate` | Validates database, Kubernetes, and alert Terraform stacks | `terraform init -backend=false` and `terraform validate` across infra modules |
 | `make git-status` | Displays short branch status and submodule commit SHAs | `git status --short --branch` and `git submodule status` |
@@ -327,8 +329,12 @@ The platform provides standardized shell scripts located in [`scripts/`](scripts
 | :--- | :--- | :--- |
 | [`scripts/kind-with-registry.sh`](scripts/kind-with-registry.sh) | Local Kubernetes Cluster | Creates a local multi-node [Kind](https://kind.sigs.k8s.io/) cluster with an integrated Docker container registry on `localhost:5001`. |
 | [`scripts/bootstrap-azure.sh`](scripts/bootstrap-azure.sh) | Azure & GitHub Bootstrap | Establishes the Azure foundation (Resource Groups, Storage Account, Microsoft Entra OIDC Apps, RBAC) and GitHub Actions environments/secrets without provisioning application workloads. |
+| [`scripts/validate-kind.sh`](scripts/validate-kind.sh) | Local Kubernetes validation | Builds and exercises the pinned application images in Kind and records local-only evidence. |
+| [`scripts/deploy-azure.sh`](scripts/deploy-azure.sh) | Coordinated Azure release | Executes gated release phases against the single Azure environment. |
 
-For detailed usage instructions and governance requirements for Azure bootstrap, refer to the [Azure Bootstrap Guide](docs/azure-bootstrap.md).
+See the [Azure Bootstrap Guide](docs/azure-bootstrap.md) and [Release Process](docs/release-process.md) for prerequisites, governance, and recovery.
+
+Platform CI requires `Component Checks`, `Pinned Integration`, and `Release Images`, including E2E and Trivy. Component PR-head mode supports review of coordinated changes only; merge component PRs and repin their successfully checked `main` commits before tagging. Kind is not a CI or release gate.
 
 ---
 
