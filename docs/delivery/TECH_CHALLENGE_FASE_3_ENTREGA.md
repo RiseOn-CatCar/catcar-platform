@@ -96,7 +96,11 @@ A assistência de IA potencializou a materialização dessas decisões, sem subs
 |---|---|
 | **API Gateway + autenticação serverless** | Azure API Management aplica política JWT e roteia `POST /api/auth/customer` para a Azure Function. A Function valida CPF, consulta cliente ativo e emite JWT HMAC-SHA256. |
 | **Banco de dados gerenciado** | Azure Database for PostgreSQL Flexible Server 17 com subnet delegada, DNS privado, SSL e segredos protegidos no Azure Key Vault. |
-| **Kubernetes escalável** | AKS multi-AZ com Azure CNI, Workload Identity e HPA baseado em CPU/memória, configurado de 2 a 10 réplicas. |
+| **Kubernetes escalável** | AKS com Azure CNI, Workload Identity, autoscaler de nós e HPA baseado em CPU/memória, configurado de 2 a 10 réplicas. Zonas de disponibilidade não são configuradas por padrão neste ambiente acadêmico. |
 | **Infraestrutura como código** | Os stacks `catcar-database-infra` e `catcar-kubernetes-infra` descrevem a infraestrutura Azure obrigatória integralmente em Terraform, com pipelines próprias de validação e aplicação. |
 | **Observabilidade e workbooks** | OpenTelemetry, Application Insights, Log Analytics, health checks, alertas de latência/CPU/memória/uptime e workbook operacional permitem acompanhamento técnico e de negócio. |
 | **CI/CD e governança de release** | Os quatro repositórios de componentes executam CI; o meta-repositório fixa os commits dos componentes como submódulos. Somente uma tag estrita `vMAJOR.MINOR.PATCH` no meta-repositório aciona `release.yml` pelo GitHub Environment `azure` e implanta os commits fixados no único ambiente Azure `rg-catcar`. Kind é usado apenas para validação local. |
+
+## 7. Ambiente efêmero e evidências de execução
+
+Para evitar custo contínuo, o ambiente Azure é **efêmero**: é provisionado pelo release por tag para a demonstração e removido em seguida (`scripts/teardown-azure.sh`; ver `docs/azure-teardown.md`). Por isso não há URL de implantação permanente nos repositórios, e os links de "deploys ativos" (quando aplicáveis) não são fornecidos. A conformidade é comprovada pelo vídeo de demonstração, pela execução registrada do workflow `Release` no GitHub Actions (com deploy, smoke test e aprovação das verificações), pelas capturas do dashboard, dos logs e dos traces, e pelo Terraform versionado nos repositórios. O ambiente pode ser recriado publicando uma nova tag `v*`.
