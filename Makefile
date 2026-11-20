@@ -2,7 +2,7 @@ SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help dev build test format infra-validate git-status git-sync restore kind-up kind-validate verify-release verify-component-checks deploy-azure
+.PHONY: help dev build test format infra-validate git-status git-sync restore kind-up kind-validate verify-release verify-component-checks deploy-azure azure-teardown-plan azure-teardown
 
 help:
 	@printf "%s\n\n%s\n  %-16s %s\n  %-16s %s\n  %-16s %s\n  %-16s %s\n  %-16s %s\n  %-16s %s\n  %-16s %s\n  %-16s %s\n  %-16s %s\n" \
@@ -22,7 +22,9 @@ help:
 		"kind-validate" "Build and validate the staged Kind deployment" \
 		"verify-release" "Verify release (set TAG and COMMIT)" \
 		"verify-component-checks" "Verify component CI checks for the release" \
-		"deploy-azure" "Deploy a validated release (set PHASE and ARTIFACTS_DIR)"
+		"deploy-azure" "Deploy a validated release (set PHASE and ARTIFACTS_DIR)" \
+		"azure-teardown-plan" "Preview Azure teardown" \
+		"azure-teardown" "Destroy Azure deployment (set CONFIRM=rg-catcar)"
 
 # Run the Aspire AppHost locally (Alternative: cd catcar-app && aspire start --non-interactive)
 dev:
@@ -79,3 +81,10 @@ verify-component-checks:
 deploy-azure:
 	@test -n "$(PHASE)" && test -n "$(ARTIFACTS_DIR)" || { echo "Set PHASE and ARTIFACTS_DIR" >&2; exit 1; }
 	./scripts/deploy-azure.sh --phase "$(PHASE)" --artifacts-dir "$(ARTIFACTS_DIR)"
+
+azure-teardown-plan:
+	./scripts/teardown-azure.sh
+
+azure-teardown:
+	@test "$(CONFIRM)" = "rg-catcar" || { echo "Set CONFIRM=rg-catcar" >&2; exit 1; }
+	./scripts/teardown-azure.sh --apply --confirm "$(CONFIRM)"
