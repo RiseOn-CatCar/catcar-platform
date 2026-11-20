@@ -8,6 +8,10 @@ Desktop.ini
 .idea/
 .vs/
 *.swp
+
+# .NET build output
+bin/
+obj/
 *~
 
 # Local environment files

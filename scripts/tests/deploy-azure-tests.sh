@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/artifacts/release-images" "$TMP/artifacts/release-evidence" "$TMP/fake/catcar-app/scripts"
+mkdir -p "$TMP/bin" "$TMP/artifacts/release-images" "$TMP/artifacts/release-evidence" "$TMP/fake/catcar-os-service/scripts"
 export PATH="$TMP/bin:$PATH" TEST_TMP="$TMP"
 cat > "$TMP/bin/git" <<'SH'
 #!/usr/bin/env bash
@@ -25,11 +25,11 @@ cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
 exit 0
 SH
-cat > "$TMP/fake/catcar-app/scripts/smoke-integrated.sh" <<'SH'
+cat > "$TMP/fake/catcar-os-service/scripts/smoke-integrated.sh" <<'SH'
 #!/usr/bin/env bash
 exit 1
 SH
-chmod +x "$TMP/bin/"* "$TMP/fake/catcar-app/scripts/smoke-integrated.sh"
+chmod +x "$TMP/bin/"* "$TMP/fake/catcar-os-service/scripts/smoke-integrated.sh"
 export AZURE_TENANT_ID=x AZURE_SUBSCRIPTION_ID=x AZURE_DEPLOY_CLIENT_ID=x AZURE_LOCATION=x AZURE_TF_STATE_RG=x AZURE_TF_STATE_STORAGE_ACCOUNT=x TF_BACKEND_CONTAINER=x APIM_PUBLISHER_NAME=x APIM_PUBLISHER_EMAIL=x CATCAR_ALERT_EMAIL=x POSTGRES_ADMIN_PASSWORD=x POSTGRES_AUTH_READONLY_PASSWORD=x JWT_SECRET=x CUSTOMER_JWT_SIGNING_KEY=x BOOTSTRAP_ADMIN_EMAIL=x BOOTSTRAP_ADMIN_PASSWORD=x SMOKE_CUSTOMER_EMAIL=x GITHUB_REF_NAME=v1.2.3
 export GITHUB_SHA; GITHUB_SHA=$(printf '%040d' 1)
 mkdir -p "$TMP/docker" "$TMP/oci/blobs/sha256"
@@ -45,7 +45,7 @@ jq -n --arg digest "sha256:$manifest_hex" '{schemaVersion:2,manifests:[{mediaTyp
 tar -cf "$TMP/artifacts/release-images/auth-function.tar" -C "$TMP/oci" index.json blobs
 (cd "$TMP/artifacts/release-images" && sha256sum api.tar auth-function.tar > SHA256SUMS)
 id="sha256:$(printf '%064d' 1)"
-jq -n --arg sha "$GITHUB_SHA" --arg config "sha256:$config_hex" '{dirty:false,platformSha:$sha,componentShas:{"catcar-app":$sha,"catcar-auth-function":$sha,"catcar-database-infra":$sha,"catcar-kubernetes-infra":$sha},imageConfigDigests:{api:$config,authFunction:$config},checks:{componentChecks:true,pinnedIntegration:true,trivy:true}}' > "$TMP/artifacts/release-evidence/release-evidence.json"
+jq -n --arg sha "$GITHUB_SHA" --arg config "sha256:$config_hex" '{dirty:false,platformSha:$sha,componentShas:{"catcar-os-service":$sha,"catcar-auth-function":$sha,"catcar-database-infra":$sha,"catcar-kubernetes-infra":$sha},imageConfigDigests:{api:$config,authFunction:$config},checks:{componentChecks:true,pinnedIntegration:true,trivy:true}}' > "$TMP/artifacts/release-evidence/release-evidence.json"
 expect_failure() {
   local label=$1 pattern=$2; shift 2
   if "$@" > "$TMP/out" 2>&1; then echo "FAIL $label: unexpectedly succeeded" >&2; exit 1; fi
@@ -76,7 +76,7 @@ jq --arg wrong "$id" '.imageConfigDigests.authFunction=$wrong' "$TMP/original" >
 expect_failure oci-config-mismatch 'Image config digest mismatch' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
 jq '.platformSha="wrong"' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
 expect_failure platform-sha 'Invalid, dirty' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
-jq '.componentShas["catcar-app"]="wrong"' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
+jq '.componentShas["catcar-os-service"]="wrong"' "$TMP/original" > "$TMP/artifacts/release-evidence/release-evidence.json"
 expect_failure component-sha 'gitlink mismatch' bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check
 cp "$TMP/original" "$TMP/artifacts/release-evidence/release-evidence.json"
 expect_failure github-sha 'Checkout does not match GITHUB_SHA' env GITHUB_SHA=wrong bash "$ROOT/scripts/deploy-azure.sh" --phase foundation --artifacts-dir "$TMP/artifacts" --check

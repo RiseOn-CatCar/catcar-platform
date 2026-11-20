@@ -20,17 +20,17 @@ root=$(cd "$root" && pwd -P) || fail 'repository root not found'
 
 # Query the latest eligible run for each exact gitlink, including all pages.
 deadline=$((SECONDS + timeout))
-for component in catcar-app catcar-auth-function catcar-database-infra catcar-kubernetes-infra; do
+for component in catcar-os-service catcar-auth-function catcar-database-infra catcar-kubernetes-infra catcar-billing-service catcar-execution-service; do
   entry=$(git -C "$root" ls-tree HEAD -- "$component")
   [[ $entry =~ ^160000\ commit\ ([0-9a-f]{40})$'\t' ]] || fail "missing gitlink: $component"
   sha=${BASH_REMATCH[1]}
   [[ $(git -C "$root/$component" rev-parse HEAD) == "$sha" ]] || fail "checkout does not match gitlink: $component"
   workflow=ci-cd.yml
   case "$component" in
-    catcar-app) workflow=ci.yml; required='["Build & Test","Opengrep SAST Scan","Security Scan","Docker Build & Scan","Validate Aspire Publish Model"]';;
     catcar-auth-function) required='["build-and-test","validate-infra"]';;
     catcar-database-infra) required='["validate"]';;
     catcar-kubernetes-infra) required='["validate-k8s","validate-alerts"]';;
+    catcar-os-service|catcar-billing-service|catcar-execution-service) workflow=ci.yml; required='["build-test","security","deploy-kind"]';;
   esac
   repo="RiseOn-CatCar/$component"
   while :; do

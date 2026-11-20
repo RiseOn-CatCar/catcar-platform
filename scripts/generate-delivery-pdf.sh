@@ -7,8 +7,13 @@
 #
 # Usage:
 #   ./scripts/generate-delivery-pdf.sh [INPUT_FILE] [OUTPUT_PDF]
+#   ./scripts/generate-delivery-pdf.sh --phase 4
 #
-# Defaults:
+# Options:
+#   --phase N      Select the delivery phase (3 or 4). Defaults to 3.
+#   CHROMIUM_BIN   Environment variable with a Chromium/Chrome executable to use.
+#
+# Defaults (phase 3):
 #   INPUT_FILE : docs/delivery/TECH_CHALLENGE_FASE_3_ENTREGA.html (or .md)
 #   OUTPUT_PDF : docs/delivery/TECH_CHALLENGE_FASE_3_ENTREGA.pdf
 # ==============================================================================
@@ -18,10 +23,38 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+DELIVERY_PHASE="3"
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --phase)
+            DELIVERY_PHASE="${2:?--phase requires a value}"
+            shift 2
+            ;;
+        --phase=*)
+            DELIVERY_PHASE="${1#*=}"
+            shift
+            ;;
+        -h|--help)
+            grep '^#' "${BASH_SOURCE[0]}" | head -20
+            exit 0
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+if [[ ! "${DELIVERY_PHASE}" =~ ^[0-9]+$ ]]; then
+    echo "[-] Error: --phase must be a number (e.g. 3 or 4)." >&2
+    exit 1
+fi
+set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
+
 DEFAULT_DOCS_DIR="${REPO_ROOT}/docs/delivery"
-DEFAULT_HTML_INPUT="${DEFAULT_DOCS_DIR}/TECH_CHALLENGE_FASE_3_ENTREGA.html"
-DEFAULT_MD_INPUT="${DEFAULT_DOCS_DIR}/TECH_CHALLENGE_FASE_3_ENTREGA.md"
-DEFAULT_PDF_OUTPUT="${DEFAULT_DOCS_DIR}/TECH_CHALLENGE_FASE_3_ENTREGA.pdf"
+DEFAULT_HTML_INPUT="${DEFAULT_DOCS_DIR}/TECH_CHALLENGE_FASE_${DELIVERY_PHASE}_ENTREGA.html"
+DEFAULT_MD_INPUT="${DEFAULT_DOCS_DIR}/TECH_CHALLENGE_FASE_${DELIVERY_PHASE}_ENTREGA.md"
+DEFAULT_PDF_OUTPUT="${DEFAULT_DOCS_DIR}/TECH_CHALLENGE_FASE_${DELIVERY_PHASE}_ENTREGA.pdf"
 
 INPUT_PATH="${1:-}"
 OUTPUT_PDF="${2:-${DEFAULT_PDF_OUTPUT}}"
@@ -35,6 +68,7 @@ echo "================================================================="
 # ------------------------------------------------------------------------------
 find_chromium() {
     local candidates=(
+        "${CHROMIUM_BIN:-}"
         "/usr/bin/chromium"
         "/usr/bin/google-chrome"
         "/usr/bin/google-chrome-stable"
@@ -462,7 +496,7 @@ if [[ "${INPUT_PATH}" == *.md || "${INPUT_PATH}" == *.markdown ]]; then
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <title>Tech Challenge Fase 3 — CatCar Platform</title>
+  <title>Tech Challenge Fase ${DELIVERY_PHASE} — CatCar Platform</title>
   <style>
 ${CSS_PRINT_STYLES}
   </style>
@@ -479,7 +513,7 @@ else
         cp "${INPUT_PATH}" "${RENDER_HTML}"
     else
         echo "[+] Injecting print CSS styles into HTML..."
-        python3 - "${INPUT_PATH}" "${RENDER_HTML}" << 'PYEOF'
+        python3 - "${INPUT_PATH}" "${RENDER_HTML}" "${CSS_PRINT_STYLES}" << 'PYEOF'
 import sys, re
 
 in_path = sys.argv[1]
@@ -488,7 +522,7 @@ out_path = sys.argv[2]
 with open(in_path, 'r', encoding='utf-8') as f:
     content = f.read()
 
-style_tag = f"<style>\n{sys.stdin.read()}\n</style>\n"
+style_tag = f"<style>\n{sys.argv[3]}\n</style>\n"
 
 if "</head>" in content:
     content = content.replace("</head>", f"{style_tag}</head>", 1)

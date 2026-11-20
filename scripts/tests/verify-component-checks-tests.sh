@@ -24,9 +24,18 @@ case "$3" in
     jq -n --arg sha "${RUN_SHA:-$TEST_SHA}" --arg branch "${RUN_BRANCH:-main}" --arg event "${RUN_EVENT:-push}" '{workflow_runs:[{id:1,head_sha:$sha,head_branch:$branch,event:$event,status:"completed",conclusion:"success",created_at:"2026-01-01T00:00:00Z"}]}'
     ;;
   *'/actions/runs/1/jobs?'*)
-    jq -n --arg job "${BAD_JOB:-}" --arg kind "${BAD_KIND:-}" '
-      {jobs: (["Build & Test", "Opengrep SAST Scan", "Security Scan", "Docker Build & Scan", "Validate Aspire Publish Model", "build-and-test", "validate-infra", "validate", "validate-k8s", "validate-alerts"]
-        | map(select(. != $job or $kind != "missing") | {name:., status:"completed", conclusion:(if . == $job and ($kind == "skipped" or $kind == "cancelled") then $kind else "success" end)}))}'
+    case "$3" in
+      *catcar-os-service/*) jobs='["build-test","security","deploy-kind"]';;
+      *catcar-auth-function/*) jobs='["build-and-test","validate-infra"]';;
+      *catcar-database-infra/*) jobs='["validate"]';;
+      *catcar-kubernetes-infra/*) jobs='["validate-k8s","validate-alerts"]';;
+      *catcar-billing-service/*|*catcar-execution-service/*) jobs='["build-test","security","deploy-kind"]';;
+      *) exit 1;;
+    esac
+    bad_job=''
+    [[ -z ${BAD_COMPONENT:-} || $3 == *"/$BAD_COMPONENT/"* ]] && bad_job=${BAD_JOB:-}
+    jq -n --argjson jobs "$jobs" --arg job "$bad_job" --arg kind "${BAD_KIND:-}" '
+      {jobs: ($jobs | map(select(. != $job or $kind != "missing") | {name:., status:"completed", conclusion:(if . == $job and ($kind == "skipped" or $kind == "cancelled") then $kind else "success" end)}))}'
     ;;
   *) exit 1;;
 esac
@@ -44,7 +53,10 @@ expect_success() {
   if ! "$@" > "$TMP/output" 2>&1; then
     echo "FAIL $name" >&2; cat "$TMP/output" >&2; exit 1
   fi
-  [[ $(grep -c '/actions/runs/1/jobs?' "$TMP/queries") == 4 ]] || { echo "FAIL $name: expected four job queries" >&2; exit 1; }
+  [[ $(grep -c '/actions/runs/1/jobs?' "$TMP/queries") == 6 ]] || { echo "FAIL $name: expected six job queries" >&2; exit 1; }
+  for component in catcar-os-service catcar-auth-function catcar-database-infra catcar-kubernetes-infra catcar-billing-service catcar-execution-service; do
+    grep -Fq "repos/RiseOn-CatCar/$component/actions/runs/1/jobs?" "$TMP/queries" || { echo "FAIL $name: missing $component" >&2; exit 1; }
+  done
   echo "PASS $name"
 }
 expect_failure() {
@@ -67,7 +79,14 @@ expect_failure pr-wrong-event 'Waiting for pull-request checks' env RUN_EVENT=wo
 expect_failure pr-wrong-sha 'Waiting for pull-request checks' env RUN_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "${verify[@]}" --mode pull-request
 for mode in release pull-request; do
   for kind in skipped missing cancelled; do
-    expect_failure "$mode-$kind" 'missing a successful required job' env BAD_JOB='Build & Test' BAD_KIND="$kind" "${verify[@]}" --mode "$mode"
+    expect_failure "$mode-$kind" 'missing a successful required job' env BAD_JOB='build-test' BAD_KIND="$kind" "${verify[@]}" --mode "$mode"
+  done
+done
+for component in catcar-os-service catcar-billing-service catcar-execution-service; do
+  for job in build-test security deploy-kind; do
+    for kind in skipped missing cancelled; do
+      expect_failure "$component-$job-$kind" 'missing a successful required job' env BAD_COMPONENT="$component" BAD_JOB="$job" BAD_KIND="$kind" "${verify[@]}"
+    done
   done
 done
 expect_failure invalid-mode 'invalid mode' "${verify[@]}" --mode invalid

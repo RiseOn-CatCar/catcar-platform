@@ -1,8 +1,16 @@
 {
   "folders": [
     {
-      "name": "CatCar App",
-      "path": "catcar-app"
+      "name": "CatCar OS Service",
+      "path": "catcar-os-service"
+    },
+    {
+      "name": "CatCar Billing Service",
+      "path": "catcar-billing-service"
+    },
+    {
+      "name": "CatCar Execution Service",
+      "path": "catcar-execution-service"
     },
     {
       "name": "CatCar Auth Function",
@@ -18,7 +26,7 @@
     }
   ],
   "settings": {
-    "dotnet.defaultSolution": "catcar-app/CatCar.slnx",
+    "dotnet.defaultSolution": "catcar-os-service/CatCar.slnx",
     "[csharp]": {
       "editor.formatOnSave": true
     },

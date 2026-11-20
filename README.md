@@ -1,8 +1,8 @@
 # CatCar Platform
 
 [![Organization](https://img.shields.io/badge/organization-RiseOn--CatCar-blue?logo=github)](https://github.com/RiseOn-CatCar)
-[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![C#](https://img.shields.io/badge/C%23-14-239120?logo=csharp&logoColor=white)](https://learn.microsoft.com/dotnet/csharp/)
+[![.NET](https://img.shields.io/badge/.NET-11.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![C#](https://img.shields.io/badge/C%23-.NET%2011%20default-239120?logo=csharp&logoColor=white)](https://learn.microsoft.com/dotnet/csharp/)
 [![Aspire](https://img.shields.io/badge/.NET%20Aspire-Orchestrated-512BD4?logo=dotnet)](https://learn.microsoft.com/dotnet/aspire/)
 [![Terraform](https://img.shields.io/badge/Terraform-1.5%2B-7B42BC?logo=terraform&logoColor=white)](https://www.terraform.io/)
 [![Azure](https://img.shields.io/badge/Azure-Cloud-0078D4?logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/)
@@ -42,12 +42,16 @@ flowchart TD
         direction TB
         RootNode["<b>RiseOn-CatCar / catcar-platform</b><br/><i>Umbrella Workspace, Makefile & CI/CD Orchestration</i>"]:::meta
 
-        AppSub["<b>catcar-app</b><br/>.NET 10 Modular Monolith API<br/>& Aspire AppHost"]:::app
+        AppSub["<b>catcar-os-service</b><br/>Work orders &amp; identity"]:::app
+        BillingSub["<b>catcar-billing-service</b><br/>Budgets &amp; payments"]:::app
+        ExecutionSub["<b>catcar-execution-service</b><br/>Catalog, inventory &amp; execution"]:::app
         AuthSub["<b>catcar-auth-function</b><br/>Azure Functions Isolated Worker<br/>Customer CPF Auth & JWT"]:::fn
         DbSub["<b>catcar-database-infra</b><br/>Terraform IaC<br/>PostgreSQL Flexible Server & Key Vault"]:::infra
         K8sSub["<b>catcar-kubernetes-infra</b><br/>Terraform IaC<br/>AKS, APIM, ACR, VNet & Alerts"]:::infra
 
         RootNode -->|submodule| AppSub
+        RootNode -->|submodule| BillingSub
+        RootNode -->|submodule| ExecutionSub
         RootNode -->|submodule| AuthSub
         RootNode -->|submodule| DbSub
         RootNode -->|submodule| K8sSub
@@ -56,33 +60,95 @@ flowchart TD
 
 ### Component Breakdown
 
-```
-+-------------------------------------------------------------------------------------------------------------------+
-|                                          RiseOn-CatCar / catcar-platform                                          |
-|                                            (Umbrella Meta-Repository)                                             |
-+---------------------------+-----------------------------------+---------------------------------------------------+
-| Component Submodule       | Role & Architectural Scope        | Remote Repository Link                            |
-+---------------------------+-----------------------------------+---------------------------------------------------+
-| catcar-app                | Backend Modular Monolith API,     | https://github.com/RiseOn-CatCar/catcar-app       |
-|                           | Domain Contexts, EF Core, Wolverine|                                                   |
-|                           | Outbox, and .NET Aspire AppHost   |                                                   |
-| catcar-auth-function      | Serverless Azure Function (.NET   | https://github.com/RiseOn-CatCar/catcar-auth-function|
-|                           | 10 Isolated) for customer CPF     |                                                   |
-|                           | validation & JWT token issuance   |                                                   |
-| catcar-database-infra     | Terraform IaC provisioning Azure  | https://github.com/RiseOn-CatCar/catcar-database-infra|
-|                           | Database for PostgreSQL Flexible  |                                                   |
-|                           | Server, Key Vault & Private DNS   |                                                   |
-| catcar-kubernetes-infra   | Terraform IaC provisioning Azure  | https://github.com/RiseOn-CatCar/catcar-kubernetes-infra|
-|                           | Virtual Network, AKS Cluster,     |                                                   |
-|                           | API Management (APIM), ACR & OTel |                                                   |
-+---------------------------+-----------------------------------+---------------------------------------------------+
-```
+| Component | Role | Database | Documentation |
+| :--- | :--- | :--- | :--- |
+| `catcar-os-service` | Work orders, customers, vehicles and administrative identity; hosts the `WorkOrderSaga` orchestrator | PostgreSQL `catcar_os` (EF Core) | [Repository](https://github.com/RiseOn-CatCar/catcar-os-service) |
+| `catcar-billing-service` | Budgets, approval links, e-mails and Mercado Pago payments | Marten document database (JSONB on PostgreSQL) `catcar_billing` | [Repository](https://github.com/RiseOn-CatCar/catcar-billing-service) |
+| `catcar-execution-service` | Service catalog, inventory, reservations and execution queue | PostgreSQL `catcar_execution` (EF Core) | [Repository](https://github.com/RiseOn-CatCar/catcar-execution-service) |
+| `catcar-auth-function` | Customer authentication by CPF and JWT issuance (Azure Function) | Read-only access to the customers table of `catcar_os` (recorded technical debt) | [Repository](https://github.com/RiseOn-CatCar/catcar-auth-function) |
+| `catcar-database-infra` | PostgreSQL and secrets infrastructure | n/a | [Repository](https://github.com/RiseOn-CatCar/catcar-database-infra) |
+| `catcar-kubernetes-infra` | AKS, APIM, ACR and observability infrastructure | n/a | [Repository](https://github.com/RiseOn-CatCar/catcar-kubernetes-infra) |
+
+Each microservice has its own repository, database, Dockerfile, Kubernetes manifests (`k8s/base` and `k8s/overlays/ci`) and independent CI pipeline (build, tests with an 80% coverage gate, SonarCloud, security scans and an ephemeral kind deployment). The `main` branch of every component requires a pull request and the checks `build-test`, `security`, `sonar` and `deploy-kind`.
 
 ---
 
 ## System Architecture & Cloud Topology
 
-In the single Azure environment, external traffic passes through Azure API Management. The modular monolith runs in Azure Kubernetes Service (AKS), while customer authentication is handled by Azure Functions. Kind is local-only; CI builds and scans release images, and only strict version tags in this platform repository initiate Azure deployment.
+### Phase 4: Microservices Architecture
+
+The OS, Billing and Execution services are independent deployables. No service reads another service's database. Asynchronous messaging over RabbitMQ (Wolverine, durable inbox and outbox) carries commands and events; the only synchronous call is a read-only catalog lookup from the OS service to the Execution service. The OS service runs the orchestrated `WorkOrderSaga` with compensations (see [`docs/architecture/messaging-contracts.md`](docs/architecture/messaging-contracts.md)).
+
+```mermaid
+flowchart LR
+    classDef client fill:#1e293b,stroke:#64748b,stroke-width:1px,color:#fff;
+    classDef svc fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff;
+    classDef fn fill:#134e4a,stroke:#2dd4bf,stroke-width:2px,color:#fff;
+    classDef data fill:#701a75,stroke:#f472b6,stroke-width:2px,color:#fff;
+    classDef mq fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#fff;
+    classDef ext fill:#0f172a,stroke:#94a3b8,stroke-width:1px,color:#fff;
+    classDef apim fill:#0369a1,stroke:#38bdf8,stroke-width:2px,color:#fff;
+    classDef obs fill:#14532d,stroke:#4ade80,stroke-width:2px,color:#fff;
+
+    Client["Clients (web, mobile, Postman)"]:::client
+    APIM["Azure API Management<br/>(Phase 3 route set; new services not routed yet)"]:::apim
+    AuthFn["catcar-auth-function<br/>POST /api/auth/customer"]:::fn
+
+    subgraph Services["Microservices (Aspire locally, kind in CI)"]
+        OS["<b>os-service</b><br/>work orders, customers,<br/>vehicles, identity<br/>WorkOrderSaga orchestrator"]:::svc
+        BILL["<b>billing-service</b><br/>budgets, approval links,<br/>e-mails, payments"]:::svc
+        EXEC["<b>execution-service</b><br/>catalog, inventory,<br/>execution queue"]:::svc
+    end
+
+    MQ{{"RabbitMQ<br/>(Wolverine, conventional routing,<br/>durable inbox and outbox)"}}:::mq
+
+    OSDB[("catcar_os<br/>PostgreSQL / EF Core")]:::data
+    BILLDB[("catcar_billing<br/>Marten document DB<br/>(JSONB on PostgreSQL)")]:::data
+    EXECDB[("catcar_execution<br/>PostgreSQL / EF Core")]:::data
+
+    MP["Mercado Pago<br/>(checkout, webhook, refund)"]:::ext
+    MAIL["Mailpit (local) /<br/>Azure Communication Services"]:::ext
+    OBS["OpenTelemetry<br/>Aspire dashboard / Application Insights"]:::obs
+
+    Client -->|HTTPS| APIM
+    Client -->|"direct HTTP (local, kind)"| OS
+    Client -->|"direct HTTP (local, kind)"| BILL
+    Client -->|"direct HTTP (local, kind)"| EXEC
+    APIM -->|"POST /api/auth/customer"| AuthFn
+    AuthFn -.->|"read-only customer lookup (technical debt)"| OSDB
+
+    OS --- OSDB
+    BILL --- BILLDB
+    EXEC --- EXECDB
+
+    OS <-->|"commands and events"| MQ
+    BILL <-->|"commands and events"| MQ
+    EXEC <-->|"commands and events"| MQ
+    OS -.->|"REST read-only /internal/v1/catalog"| EXEC
+
+    BILL --> MP
+    MP -.->|"webhook (x-signature)"| BILL
+    BILL --> MAIL
+
+    OS -.-> OBS
+    BILL -.-> OBS
+    EXEC -.-> OBS
+```
+
+Saga flow: `RequestBudget` -> `BudgetIssued` -> customer approval -> `BudgetApproved` -> `ReserveParts` -> `PartsReserved` -> `RequestPayment` -> `PaymentConfirmed` -> `StartExecution` -> `ExecutionCompleted`. Failures trigger compensations (`CancelBudget`, `ReleaseParts`, `RefundPayment`).
+
+### Architectural Highlights
+
+- **Service ownership**: OS owns work orders and identity; Billing owns budgets, communications and payments; Execution owns catalog, inventory and repair execution.
+- **Data**: one database per service; OS and Execution use PostgreSQL with EF Core, Billing uses Marten as a document database (JSONB on PostgreSQL), which keeps the Wolverine inbox, outbox and transactions in the same store.
+- **Integration**: asynchronous messaging through RabbitMQ with stable `[MessageIdentity]` contracts duplicated per service (no shared contracts library); synchronous REST only for the read-only catalog lookup.
+- **Consistency**: the OS service orchestrates the `WorkOrderSaga` (approval and payment timeouts, compensations that release parts, cancel budgets and refund payments).
+- **Release boundary**: The existing AKS pipeline is still the Phase 3 single-image path, not a deployment of the microservices topology.
+- **Observability**: OpenTelemetry through each service's `ServiceDefaults`; traces propagate across RabbitMQ through Wolverine. Aspire dashboard locally, Application Insights as the Phase 3 cloud target.
+
+### Phase 3 Cloud Topology
+
+**Azure release scope:** the existing AKS release remains the Phase 3 single-image deployment; deploying the Phase 4 microservices to AKS is outside the scope of Phase 4. The diagram below describes the existing Phase 3 cloud topology, not a deployed Phase 4 architecture. Kind is used for local validation and for the ephemeral deployment in each service CI; only strict version tags initiate Azure deployment.
 
 ```mermaid
 flowchart TB
@@ -106,7 +172,7 @@ flowchart TB
 
         subgraph ComputeSubnet["Workload Subnets"]
             subgraph AKSSubnet["AKS Subnet (snet-aks)"]
-                subgraph AppPod["catcar-app (Modular Monolith Pods)"]
+                subgraph AppPod["Phase 3 API (single-image pods)"]
                     direction TB
                     BC_SO["<b>ServiceOperations Context</b><br/>Work Orders, Diagnosis, Budgets, Vehicles, Customers"]
                     BC_CI["<b>CatalogInventory Context</b><br/>Cataloged Services, Parts Catalog & Stock Allocation"]
@@ -156,84 +222,13 @@ flowchart TB
     LogAnalytics --> Alerts
 ```
 
-### Architectural Highlights
-
-- **Bounded Context Isolation**: Each Domain Context within `catcar-app` operates against its own schema in PostgreSQL (`service_operations`, `catalog_inventory`, `communication`, `identity_access`), preventing tight coupling at the data layer.
-- **Outbox Pattern & In-Process Messaging**: Wolverine orchestrates domain events and reliable asynchronous integration using the PostgreSQL transactional outbox.
-- **Zero-Trust Networking**: All database and Key Vault communications route exclusively over Azure Private Endpoints (`snet-private-endpoints`) with private DNS resolution. No database ports are exposed publicly.
-- **Centralized Observability**: OpenTelemetry standardizes traces, metrics, and structured logs across AKS pods and Azure Functions into Application Insights and Log Analytics.
-
 ---
 
 ## Local Development Runtime with .NET Aspire
 
-Local platform execution is orchestrated through [.NET Aspire](https://learn.microsoft.com/dotnet/aspire/) via `catcar-app/src/Host/CatCar.AppHost/CatCar.AppHost.csproj`. A single command spins up the backend API, the serverless authentication function, a dedicated PostgreSQL database container with volume persistence, the Azurite storage emulator, and the interactive Aspire Telemetry Dashboard.
+Local platform execution is orchestrated through `aspire/CatCar.AppHost/CatCar.AppHost.csproj`. `make dev` starts the OS, Billing and Execution services, the authentication function, PostgreSQL (databases `catcar_os`, `catcar_billing` and `catcar_execution`), RabbitMQ, Mailpit and the Aspire dashboard. Mercado Pago credentials are optional parameters (`mercadopago-access-token`, `mercadopago-webhook-secret`, `mercadopago-notification-url`); without them the payment step fails fast and the saga compensates.
 
-```mermaid
-flowchart TD
-    classDef dev fill:#1e293b,stroke:#64748b,stroke-width:1px,color:#fff;
-    classDef aspire fill:#312e81,stroke:#6366f1,stroke-width:2px,color:#fff;
-    classDef container fill:#1e1b4b,stroke:#a855f7,stroke-width:2px,color:#fff;
-    classDef app fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff;
-
-    Dev["<b>Developer Workstation</b><br/>Browser / curl / VS Code"]:::dev
-
-    subgraph AspireOrchestration["Aspire AppHost Runtime (make dev)"]
-        Dashboard["<b>.NET Aspire Telemetry Dashboard</b><br/>Real-Time Distributed Traces, Metrics & Logs"]:::aspire
-
-        subgraph DevContainers["Docker / Podman Containers"]
-            PostgresContainer["<b>PostgreSQL 17 Container</b><br/>Port: 5432 | Database: catcar<br/>Persistent Volume Mounted"]:::container
-            AzuriteContainer["<b>Azure Storage Emulator (Azurite)</b><br/>auth-storage | Blob, Queue, Table"]:::container
-        end
-
-        subgraph LocalServices["Application Services"]
-            ApiProject["<b>CatCar API (.NET 10)</b><br/>HTTP: http://localhost:5000<br/>HTTPS: https://localhost:5002"]:::app
-            AuthFunctionProject["<b>CatCar Auth Function (.NET 10)</b><br/>HTTP: http://localhost:7071<br/>POST /api/auth/customer"]:::app
-        end
-    end
-
-    Dev -->|Inspect Live Telemetry| Dashboard
-    Dev -->|Test Work Orders & Catalog APIs| ApiProject
-    Dev -->|Authenticate CPF & Receive JWT| AuthFunctionProject
-
-    ApiProject -->|EF Core Migrations & Transactions| PostgresContainer
-    AuthFunctionProject -->|Verify Active Customer Record| PostgresContainer
-    AuthFunctionProject -->|Functions Storage Backend| AzuriteContainer
-
-    ApiProject -.->|OTLP Telemetry| Dashboard
-    AuthFunctionProject -.->|OTLP Telemetry| Dashboard
-    PostgresContainer -.->|Container Health Status| Dashboard
-```
-
-### Local Runtime Topology (ASCII)
-
-```
-+----------------------------------------------------------------------------------------------------+
-|                                    .NET Aspire Orchestration                                       |
-|                               (CatCar.AppHost via `make dev`)                                      |
-+----------------------------------------------------------------------------------------------------+
-|                                                                                                    |
-|   +---------------------------------+                         +--------------------------------+   |
-|   |    Aspire Telemetry Dashboard   | <--- OTLP Telemetry --- |    CatCar.Api                  |   |
-|   |    (Live Traces, Metrics, Logs) | <--- OTLP Telemetry --- |    http://localhost:5000       |   |
-|   +---------------------------------+                         |    https://localhost:5002      |   |
-|                                                               +---------------+----------------+   |
-|                                                                               |                    |
-|                                                                               | EF Core Read/Write |
-|   +---------------------------------+                                         v                    |
-|   |    CatCar.AuthFunction          | ----------------------------------> +--------------------+   |
-|   |    http://localhost:7071        |        Read-Only Query (CPF)        |    PostgreSQL 17   |   |
-|   |    POST /api/auth/customer      |                                     |    Port: 5432      |   |
-|   +----------------+----------------+                                     |    db: catcar      |   |
-|                    |                                                      +--------------------+   |
-|                    | Functions Host Storage                                                        |
-|                    v                                                                               |
-|   +---------------------------------+                                                              |
-|   |    Azurite Storage Emulator     |                                                              |
-|   |    (auth-storage container)     |                                                              |
-|   +---------------------------------+                                                              |
-+----------------------------------------------------------------------------------------------------+
-```
+The dashboard displays service endpoints, health, logs and traces. Each service owns its data; RabbitMQ carries asynchronous integration messages. The services do not reference each other at build time; the AppHost references the three APIs by submodule path.
 
 ---
 
@@ -243,7 +238,7 @@ flowchart TD
 
 Ensure the following tools are installed on your workstation:
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0) (version pinned in `global.json`)
 - [Docker](https://www.docker.com/) or [Podman](https://podman.io/) (for local database and storage containers)
 - [Terraform](https://www.terraform.io/) (`>= 1.5.0`)
 - [GNU Make](https://www.gnu.org/software/make/) (`>= 4.0`)
@@ -279,11 +274,11 @@ cursor catcar.code-workspace
 windsurf catcar.code-workspace
 ```
 
-For **JetBrains Rider**, open the root `catcar-platform` directory or open `catcar-app/CatCar.slnx` and attach `catcar-auth-function/CatCar.AuthFunction.slnx`.
+For **JetBrains Rider**, open the root `catcar-platform` directory and attach the service and authentication solutions.
 
 `catcar.code-workspace` automatically configures:
-- Multi-root project navigation for all four repositories.
-- Default .NET solution set to `catcar-app/CatCar.slnx`.
+- Multi-root project navigation for the six component repositories.
+- Default .NET solution set to `catcar-os-service/CatCar.slnx`.
 - Automatic C# format-on-save rules.
 - Terraform Language Server integration and formatting settings.
 
@@ -293,7 +288,7 @@ For **JetBrains Rider**, open the root `catcar-platform` directory or open `catc
 # 1. Restore all dependencies across application and function solutions
 make restore
 
-# 2. Launch the full local topology (API + Auth Function + PostgreSQL + Aspire Dashboard)
+# 2. Launch the local microservices topology and Aspire Dashboard
 make dev
 ```
 
@@ -308,13 +303,13 @@ The platform includes a standardized GNU `Makefile` configured with strict shell
 | Target | Description | Executed Actions |
 | :--- | :--- | :--- |
 | `make help` | Displays the command menu and target descriptions | Formatted catalog output (default goal) |
-| `make restore` | Restores dependencies for all .NET solutions | `dotnet restore` on `catcar-app` and `catcar-auth-function` |
-| `make build` | Compiles application and function solutions | `dotnet build` on `catcar-app/CatCar.slnx` and `catcar-auth-function/CatCar.AuthFunction.slnx` |
-| `make test` | Runs unit and integration test suites | `dotnet test` on `catcar-app/CatCar.slnx` and `catcar-auth-function/CatCar.AuthFunction.slnx` |
-| `make dev` | Launches local platform via Aspire AppHost | `dotnet run --project catcar-app/src/Host/CatCar.AppHost/CatCar.AppHost.csproj` |
+| `make restore` | Restores .NET dependencies | Runs restore for the configured solutions |
+| `make build` | Compiles configured solutions | Runs `dotnet build` |
+| `make test` | Runs configured test suites | Runs `dotnet test` |
+| `make dev` | Launches the local platform via the platform Aspire AppHost | Starts the service topology |
 | `make kind-up` | Starts or reuses the local Kind cluster and registry | `scripts/kind-with-registry.sh` |
 | `make kind-validate` | Validates the pinned platform locally | `scripts/validate-kind.sh` |
-| `make format` | Formats C# code and Terraform configurations | `dotnet format` on both solutions and `terraform fmt -recursive` on both infra modules |
+| `make format` | Formats C# code and Terraform configurations | `dotnet format` and `terraform fmt -recursive` |
 | `make infra-validate` | Validates database, Kubernetes, and alert Terraform stacks | `terraform init -backend=false` and `terraform validate` across infra modules |
 | `make git-status` | Displays short branch status and submodule commit SHAs | `git status --short --branch` and `git submodule status` |
 | `make git-sync` | Rebase-pulls platform and syncs submodules to remote heads | `git pull --rebase` and `git submodule update --remote --merge` |
@@ -365,9 +360,12 @@ All architectural decisions, Domain-Driven Design artifacts, RFC proposals, secu
 - [Cloud Components & Topology Specification](docs/architecture/cloud-components.md)
 - [Authentication & Work Order Sequence Diagrams](docs/architecture/auth-sequence.md)
 - [Entity-Relationship (ER) Model](docs/architecture/er-model.md)
+- [Phase 4 microservice contracts, Saga and layout](docs/architecture/messaging-contracts.md)
+- [Phase 4 implementation plan](docs/fase-4-implementation-plan.md)
 - [Tech Challenge Phase Requirements (Fase 1-4)](docs/requirements/)
 - [Fase 3 Student Portal Delivery Document](docs/delivery/TECH_CHALLENGE_FASE_3_ENTREGA.md) and [print-ready HTML equivalent](docs/delivery/TECH_CHALLENGE_FASE_3_ENTREGA.html)
-- [CatCar Platform Postman Collection v2.1.0](docs/postman/CatCar_Platform.postman_collection.json) and [environment template](docs/postman/CatCar_Platform.postman_environment.json)
+- [Fase 4 Student Portal Delivery Document](docs/delivery/TECH_CHALLENGE_FASE_4_ENTREGA.md) and [print-ready HTML equivalent](docs/delivery/TECH_CHALLENGE_FASE_4_ENTREGA.html)
+- [CatCar Platform Postman Collection v2.1.0](docs/postman/CatCar_Platform.postman_collection.json) and [environment template](docs/postman/CatCar_Platform.postman_environment.json) (OS, Billing and Execution services)
 ---
 
 ## Submodule Workflow & Contribution Guide
@@ -380,7 +378,7 @@ Always perform code changes, commit, and push directly within the specific submo
 
 ```bash
 # 1. Navigate to the submodule
-cd catcar-app
+cd catcar-os-service
 
 # 2. Create and switch to your feature branch
 git checkout -b feature/work-order-lifecycle
@@ -392,7 +390,7 @@ dotnet test
 git commit -am "feat(service-ops): add work order lifecycle events"
 git push -u origin feature/work-order-lifecycle
 
-# 5. Open and merge a Pull Request in RiseOn-CatCar/catcar-app
+# 5. Open and merge a Pull Request in RiseOn-CatCar/catcar-os-service
 ```
 
 ### Workflow B: Updating the Submodule Pointer in the Platform
@@ -401,26 +399,26 @@ Once the changes are merged upstream in the submodule repository, update the pla
 
 ```bash
 # 1. From the platform root, navigate to the submodule and pull latest main
-cd /home/davi_/Projects/CatCar/catcar-app
+cd catcar-os-service
 git checkout main
 git pull origin main
 
 # 2. Return to the platform root
-cd /home/davi_/Projects/CatCar
+cd ..
 
 # 3. Check status (git detects the updated submodule commit SHA)
 git status
-# modified:   catcar-app (new commits)
+# modified:   catcar-os-service (new commits)
 
 # 4. Stage, commit, and push the updated gitlink
-git add catcar-app
-git commit -m "chore: bump catcar-app submodule pointer to latest main"
+git add catcar-os-service
+git commit -m "chore: bump catcar-os-service submodule pointer to latest main"
 git push origin main
 ```
 
 ### Workflow C: Synchronizing All Submodules to Latest Remote Heads
 
-To advance all four submodules to their latest tracked remote branches in one step:
+To advance all submodules to their latest tracked remote branches in one step:
 
 ```bash
 make git-sync
@@ -442,11 +440,11 @@ git push origin main
 
 | Layer | Technologies & Tools |
 | :--- | :--- |
-| **Language & Frameworks** | C# 14, .NET 10.0, ASP.NET Core, Azure Functions (.NET Isolated Worker v4) |
-| **Architectural Patterns** | Domain-Driven Design (DDD), Modular Monolith, Vertical Slice Architecture, Outbox Pattern |
-| **Data & Persistence** | EF Core 10, PostgreSQL 17 (Azure Database for PostgreSQL Flexible Server), UUID v7 |
-| **Messaging & Events** | Wolverine In-Process Messaging with PostgreSQL Transactional Outbox |
-| **Local Orchestration** | .NET Aspire 13.4 AppHost, Docker / Podman, Azurite Storage Emulator |
+| **Language & Frameworks** | C# on .NET 11 (SDK `11.0.100`), ASP.NET Core, Azure Functions (.NET Isolated Worker v4) |
+| **Architectural Patterns** | Domain-Driven Design (DDD), Microservices, Vertical Slice Architecture, orchestrated Saga and Transactional Outbox |
+| **Data & Persistence** | PostgreSQL with EF Core and UUID v7 (OS, Execution); Marten document database on PostgreSQL JSONB (Billing) |
+| **Messaging & Events** | Wolverine 6, RabbitMQ, durable inbox and outbox |
+| **Local Orchestration** | .NET Aspire AppHost, Docker / Podman, RabbitMQ and Mailpit |
 | **Infrastructure as Code** | Terraform (`~> 1.5.0`), HashiCorp AzureRM Provider (`~> 4.0`) |
 | **Container & Cloud** | Azure Kubernetes Service (AKS), Azure Container Registry (ACR), Azure API Management (APIM) |
 | **Security & Secrets** | Azure Key Vault, Azure Private Endpoints, Managed Identity, JWT (HMAC-SHA256) |
