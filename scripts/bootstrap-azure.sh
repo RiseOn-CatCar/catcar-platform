@@ -334,6 +334,26 @@ set_env_secret() {
     printf '%s' "$value" | gh secret set "$name" --repo "$repo" --env "$env"
 }
 
+# Resource providers used by the Terraform roots and the release; a fresh subscription has most of them unregistered.
+readonly REQUIRED_RESOURCE_PROVIDERS=(
+    Microsoft.AlertsManagement Microsoft.ApiManagement Microsoft.App Microsoft.Authorization Microsoft.Communication
+    Microsoft.Compute Microsoft.ContainerRegistry Microsoft.ContainerService Microsoft.DBforPostgreSQL Microsoft.Insights
+    Microsoft.KeyVault Microsoft.ManagedIdentity Microsoft.Network Microsoft.OperationalInsights Microsoft.Storage
+)
+
+ensure_resource_providers() {
+    local namespace state
+    for namespace in "${REQUIRED_RESOURCE_PROVIDERS[@]}"; do
+        state="$(az provider show --namespace "$namespace" --subscription "$subscription_id" --query registrationState --output tsv)"
+        if [[ "$state" == "Registered" ]]; then
+            printf 'Reusing registered resource provider %s.\n' "$namespace"
+            continue
+        fi
+        printf 'Registering resource provider %s (was %s).\n' "$namespace" "${state:-unknown}"
+        az provider register --namespace "$namespace" --subscription "$subscription_id" --wait --only-show-errors --output none
+    done
+}
+
 while (($# > 0)); do
     case "$1" in
         --dry-run) mode="dry-run" ;;
@@ -383,6 +403,7 @@ printf 'Deploy identity: %s; RG-scoped Contributor, User Access Administrator, A
 printf 'GitHub environment policy: custom tags v* only; workflow enforces strict release tag syntax.\n'
 printf 'Environment variables: AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_DEPLOY_CLIENT_ID AZURE_LOCATION AZURE_TF_STATE_RG AZURE_TF_STATE_STORAGE_ACCOUNT TF_BACKEND_CONTAINER APIM_PUBLISHER_NAME APIM_PUBLISHER_EMAIL CATCAR_ALERT_EMAIL\n'
 printf 'Environment secrets: POSTGRES_ADMIN_PASSWORD POSTGRES_AUTH_READONLY_PASSWORD JWT_SECRET CUSTOMER_JWT_SIGNING_KEY BOOTSTRAP_ADMIN_EMAIL BOOTSTRAP_ADMIN_PASSWORD SMOKE_CUSTOMER_EMAIL\n'
+printf 'Resource providers registered when missing: %s\n' "${REQUIRED_RESOURCE_PROVIDERS[*]}"
 if [[ "$mode" == "dry-run" ]]; then
     printf 'Preview only; no Azure or GitHub changes made. Use --apply after preflight.\n'
     exit 0
@@ -417,6 +438,7 @@ else
     policies=""
 fi
 
+ensure_resource_providers
 ensure_resource_group "$STATE_RG" azure
 ensure_resource_group "$FOUNDATION_RG" azure
 ensure_resource_group "$WORKLOAD_RG" azure
