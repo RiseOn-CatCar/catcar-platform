@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-09-18
 
-> Historical decision: the original branch-specific deployments described below have been superseded by the [coordinated release process](../../release-process.md). The four repositories now run CI only; strict version tags in the platform repository deploy the single Azure environment after the release gates. Kind validation is local only.
+> Historical decision: this ADR records the Phase 3 topology. The application repository has since become `catcar-os-service`; Phase 4 introduces separate Billing and Execution services and a platform-level AppHost. The [coordinated release process](../../release-process.md) retains the Phase 3 single-image AKS path.
 
 ## Context
 
@@ -11,14 +11,14 @@ The Phase 3 Tech Challenge specifications require splitting the CatCar system in
 1. Serverless Authentication Function (`catcar-auth-function`)
 2. Kubernetes & Observability Infrastructure (`catcar-kubernetes-infra`)
 3. Managed Database & Secrets Infrastructure (`catcar-database-infra`)
-4. Main Modular Monolith Application & Aspire AppHost (`catcar-app`)
+4. Main Modular Monolith Application & Aspire AppHost (now `catcar-os-service`)
 
-The Phase 3 Tech Challenge originally specified branch-based deployments to Homologation (`develop`) and Production (`main`). The current operating contract supersedes that model: all four component repositories run CI only; the `catcar-platform` repository pins their commits as submodules, and a strict `vMAJOR.MINOR.PATCH` tag on the platform repository triggers the coordinated release to the single Azure environment `rg-catcar`. Local developer experience (inner loop) continues to run the complete solution—API, PostgreSQL database, Azurite storage emulator, and Serverless Auth Function—using .NET Aspire with a single command (`dotnet run --project src/Host/CatCar.AppHost`); Kind is local validation only.
+The Phase 3 Tech Challenge originally specified branch-based deployments to Homologation (`develop`) and Production (`main`). The current operating contract supersedes that model: component repositories run CI only; the `catcar-platform` repository pins their commits as submodules, and a strict `vMAJOR.MINOR.PATCH` tag on the platform repository triggers the coordinated release to the single Azure environment `rg-catcar`. The current local AppHost is `aspire/CatCar.AppHost/CatCar.AppHost.csproj` in the platform repository; Kind is local validation only.
 
 ## Decision
 
 1. **Repository Segregation & History Preservation**:
-   - The primary monorepo was renamed to `catcar-app`, preserving full Git commit history for core application domain slices, tests, and Aspire configuration.
+   - The primary monorepo became the application repository, now `catcar-os-service`, preserving the core application history.
    - Dedicated repositories `catcar-auth-function`, `catcar-kubernetes-infra`, and `catcar-database-infra` were created by extracting relevant path histories using `git filter-repo`.
 
 2. **Decoupled Infrastructure Pipelines**:
@@ -26,11 +26,8 @@ The Phase 3 Tech Challenge originally specified branch-based deployments to Homo
    - `catcar-database-infra` provisions Azure Database for PostgreSQL Flexible Server, Azure Key Vault, and private endpoints. It dynamically resolves the private endpoint subnet (`snet-private-endpoints`) via Terraform `data "azurerm_subnet"` lookup, eliminating tight cross-stack output variable bindings.
 
 3. **Aspire Dual-Mode Orchestration via Pinned Git Submodule**:
-   - The `catcar-auth-function` repository is linked into `catcar-app` under `external/catcar-auth-function` as a pinned Git submodule.
-   - In **Run Mode** (`isRunMode`), Aspire AppHost registers the function via the path overload:
-     `builder.AddAzureFunctionsProject("auth-function", "../../../external/catcar-auth-function/src/CatCar.AuthFunction/CatCar.AuthFunction.csproj")`.
-     This provides unified local debugging without MSBuild `<ProjectReference>` compilation coupling or SDK type generation.
-   - In **Publish Mode** (`isPublishMode`), Aspire models the Kubernetes API workload and external connection strings.
+   - In Phase 3, the authentication repository was linked into the application repository under `external/catcar-auth-function` as a pinned submodule; the application AppHost registered the function by project path in run mode and modelled the API workload in publish mode.
+   - The current platform-level AppHost composes the OS, Billing and Execution services and authentication function for local development.
 
 4. **Coordinated Single-Environment Release**:
    - The four component repositories run CI only. The `catcar-platform` repository pins each component commit as a Git submodule.

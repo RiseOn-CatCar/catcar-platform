@@ -35,7 +35,7 @@ diagnose_previous_release() {
 validate_evidence() {
   local evidence=$1 component actual
   jq -e --arg sha "$GITHUB_SHA" '.dirty == false and .platformSha == $sha and (.checks | type == "object" and .componentChecks == true and .pinnedIntegration == true and .trivy == true) and (.imageConfigDigests | [.api,.authFunction] | all(.[]; type == "string" and test("^sha256:[0-9a-f]{64}$")))' "$evidence" >/dev/null || { fail 'Invalid, dirty, or mismatched release evidence (required checks and imageConfigDigests required)'; return 1; }
-  for component in catcar-app catcar-auth-function catcar-database-infra catcar-kubernetes-infra; do
+  for component in catcar-os-service catcar-auth-function catcar-database-infra catcar-kubernetes-infra; do
     actual=$(git -C "$ROOT_DIR" rev-parse "HEAD:$component") || return 1
     jq -e --arg component "$component" --arg sha "$actual" '.componentShas[$component] == $sha' "$evidence" >/dev/null || { fail "Release evidence gitlink mismatch: $component"; return 1; }
   done
@@ -126,7 +126,7 @@ publish_images() {
   docker load -i "$ARTIFACTS/release-images/api.tar" > "$TMP_DIR/docker.log"
   docker load -i "$ARTIFACTS/release-images/auth-function.tar" >> "$TMP_DIR/docker.log"
   for key in api authFunction; do
-    if [[ $key == api ]]; then repo=catcar-api; component=catcar-app; else repo=catcar-auth-function; component=catcar-auth-function; fi
+    if [[ $key == api ]]; then repo=catcar-api; component=catcar-os-service; else repo=catcar-auth-function; component=catcar-auth-function; fi
     sha=$(git -C "$ROOT_DIR" rev-parse "HEAD:$component")
     image="localhost:5001/$repo:$sha"
     expected=$(jq -er --arg key "$key" '.imageConfigDigests[$key]' "$ARTIFACTS/release-evidence/release-evidence.json")
@@ -226,7 +226,7 @@ run_job() {
   local name=$1 mode=$2
   kubectl -n "$NAMESPACE" delete job "$name" --ignore-not-found --wait=true >/dev/null
   if [[ $mode == migration ]]; then
-    awk -v image="$API_IMAGE" '{gsub(/__API_IMAGE__/, image); gsub(/__RUNTIME_SECRET__/, "catcar-migration-secret"); print}' "$ROOT_DIR/catcar-app/k8s/migration-job.yaml" | kubectl -n "$NAMESPACE" apply -f - >/dev/null
+    awk -v image="$API_IMAGE" '{gsub(/__API_IMAGE__/, image); gsub(/__RUNTIME_SECRET__/, "catcar-migration-secret"); print}' "$ROOT_DIR/catcar-os-service/k8s/migration-job.yaml" | kubectl -n "$NAMESPACE" apply -f - >/dev/null
   else
     jq -n --arg image "$API_IMAGE" --arg name "$name" '{apiVersion:"batch/v1",kind:"Job",metadata:{name:$name,labels:{"app.kubernetes.io/component":"reconciliation"}},spec:{backoffLimit:0,template:{metadata:{labels:{"app.kubernetes.io/component":"reconciliation"}},spec:{restartPolicy:"Never",containers:[{name:"reconciliation",image:$image,args:["--reconcile-inventory"],envFrom:[{configMapRef:{name:"catcar-migration-config"}},{secretRef:{name:"catcar-migration-secret"}}]}]}}}}' | kubectl -n "$NAMESPACE" apply -f - >/dev/null
   fi
@@ -279,7 +279,7 @@ phase_api() {
   export Parameters__jwt_secret="$JWT_SECRET" Parameters__customer_jwt_signing_key="$CUSTOMER_JWT_SIGNING_KEY"
   export Parameters__communication_connection_string Parameters__communication_sender_address Parameters__communication_external_base_url="$GATEWAY"
   export ConnectionStrings__catcar; ConnectionStrings__catcar=$(<"$TMP_DIR/ConnectionStrings__catcar")
-  (cd "$ROOT_DIR/catcar-app" && dotnet tool restore > "$TMP_DIR/tool.log" 2>&1 && dotnet tool run aspire -- publish --non-interactive --apphost src/Host/CatCar.AppHost/CatCar.AppHost.csproj --environment Production -o "$TMP_DIR/chart") > "$TMP_DIR/publish.log" 2>&1 || { fail 'Aspire publish failed'; return 1; }
+  (cd "$ROOT_DIR/catcar-os-service" && dotnet tool restore > "$TMP_DIR/tool.log" 2>&1 && dotnet tool run aspire -- publish --non-interactive --apphost src/Host/CatCar.AppHost/CatCar.AppHost.csproj --environment Production -o "$TMP_DIR/chart") > "$TMP_DIR/publish.log" 2>&1 || { fail 'Aspire publish failed'; return 1; }
   local -a charts; mapfile -t charts < <(find "$TMP_DIR/chart" -name Chart.yaml -type f)
   ((${#charts[@]} == 1)) || { fail 'Expected one generated chart'; return 1; }
   write_helm_secret_values "${charts[0]%/Chart.yaml}"
@@ -311,7 +311,7 @@ phase_alerts_smoke() {
   curl --fail --silent --show-error --max-time 30 "$GATEWAY/api/health/ready" -o /dev/null
   RELEASE_UNPAUSING=true
   set_pause false
-  if ! API_BASE_URL="$GATEWAY" AUTH_BASE_URL="$GATEWAY" HEALTH_BASE_URL="$GATEWAY/api" bash "$ROOT_DIR/catcar-app/scripts/smoke-integrated.sh" --mode azure; then
+  if ! API_BASE_URL="$GATEWAY" AUTH_BASE_URL="$GATEWAY" HEALTH_BASE_URL="$GATEWAY/api" bash "$ROOT_DIR/catcar-os-service/scripts/smoke-integrated.sh" --mode azure; then
     set_pause true || fail 'CRITICAL: could not re-pause APIM after failed smoke'
     fail 'Azure smoke failed; mutations must remain paused'; return 1
   fi

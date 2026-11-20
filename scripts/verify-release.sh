@@ -21,7 +21,7 @@ actual=$(git -C "$root" rev-parse --verify "refs/tags/$tag^{commit}") || fail 't
 [[ $actual == "$commit" ]] || fail 'tag does not point to supplied commit'
 git -C "$root" fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
 git -C "$root" merge-base --is-ancestor "$commit" refs/remotes/origin/main || fail 'platform commit is not on origin/main'
-for component in catcar-app catcar-auth-function catcar-database-infra catcar-kubernetes-infra; do
+for component in catcar-os-service catcar-auth-function catcar-database-infra catcar-kubernetes-infra; do
   entry=$(git -C "$root" ls-tree "$commit" -- "$component")
   [[ $entry =~ ^160000\ commit\ ([0-9a-f]{40})$'\t' ]] || fail "missing gitlink: $component"
   sha=${BASH_REMATCH[1]}

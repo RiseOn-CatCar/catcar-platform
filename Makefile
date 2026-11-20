@@ -10,7 +10,7 @@ help:
 		"Available targets:" \
 		"help" "Show this help message" \
 		"dev" "Run the Aspire AppHost locally" \
-		"build" "Build all .NET solutions (app and auth function)" \
+		"build" "Build all .NET solutions" \
 		"test" "Run tests for all .NET solutions" \
 		"format" "Format .NET code and Terraform configurations" \
 		"infra-validate" "Validate database and Kubernetes Terraform configurations" \
@@ -26,20 +26,28 @@ help:
 		"azure-teardown-plan" "Preview Azure teardown" \
 		"azure-teardown" "Destroy Azure deployment (set CONFIRM=rg-catcar)"
 
-# Run the Aspire AppHost locally (Alternative: cd catcar-app && aspire start --non-interactive)
+# Run the platform Aspire AppHost locally.
 dev:
-	dotnet run --project catcar-app/src/Host/CatCar.AppHost/CatCar.AppHost.csproj
+	aspire start --apphost aspire/CatCar.AppHost/CatCar.AppHost.csproj --non-interactive
 
 build:
-	dotnet build catcar-app/CatCar.slnx
+	dotnet build catcar-os-service/CatCar.slnx
+	dotnet build catcar-billing-service/CatCar.Billing.slnx
+	dotnet build catcar-execution-service/CatCar.Execution.slnx
+	dotnet build CatCar.Platform.slnx
 	dotnet build catcar-auth-function/CatCar.AuthFunction.slnx
 
 test:
-	dotnet test catcar-app/CatCar.slnx
+	dotnet test catcar-os-service/CatCar.slnx
+	dotnet test catcar-billing-service/CatCar.Billing.slnx
+	dotnet test catcar-execution-service/CatCar.Execution.slnx
 	dotnet test catcar-auth-function/CatCar.AuthFunction.slnx
 
 format:
-	dotnet format catcar-app/CatCar.slnx
+	dotnet format catcar-os-service/CatCar.slnx
+	dotnet format catcar-billing-service/CatCar.Billing.slnx
+	dotnet format catcar-execution-service/CatCar.Execution.slnx
+	dotnet format CatCar.Platform.slnx
 	dotnet format catcar-auth-function/CatCar.AuthFunction.slnx
 	terraform -chdir=catcar-database-infra fmt -recursive
 	terraform -chdir=catcar-kubernetes-infra fmt -recursive
@@ -62,7 +70,10 @@ git-sync:
 	git submodule update --remote --merge
 
 restore:
-	dotnet restore catcar-app/CatCar.slnx
+	dotnet restore catcar-os-service/CatCar.slnx
+	dotnet restore catcar-billing-service/CatCar.Billing.slnx
+	dotnet restore catcar-execution-service/CatCar.Execution.slnx
+	dotnet restore CatCar.Platform.slnx
 	dotnet restore catcar-auth-function/CatCar.AuthFunction.slnx
 
 kind-up:

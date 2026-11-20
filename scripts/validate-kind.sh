@@ -19,7 +19,7 @@ API_SERVICE=catcar-api
 AUTH_SERVICE=catcar-auth-function
 MAIL_SERVICE=mailpit
 MAINTENANCE_JOB=catcar-maintenance
-MIGRATION_MANIFEST="$ROOT_DIR/catcar-app/k8s/migration-job.yaml"
+MIGRATION_MANIFEST="$ROOT_DIR/catcar-os-service/k8s/migration-job.yaml"
 
 ARTIFACTS="$ROOT_DIR/artifacts/kind"
 IMAGES="$ARTIFACTS/images"
@@ -48,7 +48,7 @@ for name, value in zip(("API_LOCAL_PORT", "FUNCTION_LOCAL_PORT", "MAILPIT_LOCAL_
 PY
 platform_sha=$(git rev-parse HEAD)
 declare -A component_shas
-components=(catcar-app catcar-auth-function catcar-database-infra catcar-kubernetes-infra)
+components=(catcar-os-service catcar-auth-function catcar-database-infra catcar-kubernetes-infra)
 dirty=false
 check_sources() {
   local component expected actual status
@@ -71,7 +71,7 @@ check_sources() {
   done
 }
 check_sources
-api_commit=${component_shas[catcar-app]}
+api_commit=${component_shas[catcar-os-service]}
 auth_commit=${component_shas[catcar-auth-function]}
 API_TAG="localhost:5001/catcar-api:$api_commit"
 AUTH_TAG="localhost:5001/catcar-auth-function:$auth_commit"
@@ -122,7 +122,7 @@ BOOTSTRAP_ADMIN_EMAIL=$(jq -r '.data.BOOTSTRAP_ADMIN_EMAIL' <<<"$secret" | base6
 BOOTSTRAP_ADMIN_PASSWORD=$(jq -r '.data.BOOTSTRAP_ADMIN_PASSWORD' <<<"$secret" | base64 -d)
 unset secret secrets
 
-docker build -t "$API_TAG" catcar-app
+docker build -t "$API_TAG" catcar-os-service
 docker build -t "$AUTH_TAG" catcar-auth-function
 docker push "$API_TAG"
 docker push "$AUTH_TAG"
@@ -154,7 +154,7 @@ auth_config=$(image_archive_config_digest "$tmp/auth-function.tar")
 [[ $(registry_config catcar-auth-function "${auth_image##*@}") == "$auth_config" ]] || { echo "Function archive and registry config differ" >&2; exit 1; }
 
 export Parameters__local_api_image="$api_image" Parameters__local_auth_function_image="$auth_image"
-(cd catcar-app && dotnet tool run aspire -- publish --non-interactive --apphost src/Host/CatCar.AppHost/CatCar.AppHost.csproj --environment LocalKubernetes -o "$CHART_OUTPUT")
+(cd catcar-os-service && dotnet tool run aspire -- publish --non-interactive --apphost src/Host/CatCar.AppHost/CatCar.AppHost.csproj --environment LocalKubernetes -o "$CHART_OUTPUT")
 mapfile -t charts < <(find "$CHART_OUTPUT" -name Chart.yaml -type f -print)
 ((${#charts[@]} == 1)) || { echo "Expected exactly one generated Helm chart under $CHART_OUTPUT" >&2; exit 1; }
 chart=${charts[0]%/Chart.yaml}
@@ -253,7 +253,7 @@ forward "$MAIL_SERVICE" "$MAILPIT_LOCAL_PORT" 8025 MAILPIT_LOCAL_PORT
 export API_BASE_URL="http://127.0.0.1:$API_LOCAL_PORT" AUTH_BASE_URL="http://127.0.0.1:$FUNCTION_LOCAL_PORT"
 export HEALTH_BASE_URL="$API_BASE_URL" MAILPIT_BASE_URL="http://127.0.0.1:$MAILPIT_LOCAL_PORT"
 export SMOKE_RESULT_FILE="$tmp/smoke.json"
-"$ROOT_DIR/catcar-app/scripts/smoke-integrated.sh" --mode kind
+"$ROOT_DIR/catcar-os-service/scripts/smoke-integrated.sh" --mode kind
 jq -e 'type == "object" and length > 0 and all(.[]; . == true)' "$SMOKE_RESULT_FILE" >/dev/null
 mv "$tmp/api.tar" "$IMAGES/api.tar"
 mv "$tmp/auth-function.tar" "$IMAGES/auth-function.tar"
@@ -261,11 +261,11 @@ mv "$tmp/auth-function.tar" "$IMAGES/auth-function.tar"
 check_sources
 jq -n --arg platformSha "$platform_sha" --arg apiImage "$api_image" --arg authFunctionImage "$auth_image" \
   --arg apiImageId "$api_id" --arg authFunctionImageId "$auth_id" --arg apiConfig "$api_config" --arg authConfig "$auth_config" --argjson dirty "$dirty" \
-  --arg sdk "$(dotnet --version)" --arg aspire "$(cd catcar-app && dotnet tool run aspire -- --version)" \
+  --arg sdk "$(dotnet --version)" --arg aspire "$(cd catcar-os-service && dotnet tool run aspire -- --version)" \
   --arg kind "$(kind version)" --arg kubernetes "$("${k[@]}" version -o json | jq -r '.serverVersion.gitVersion')" \
   --argjson apiRunning "$api_running" --argjson authRunning "$auth_running" --argjson jobRunning "$job_running" \
-  --arg app "${component_shas[catcar-app]}" --arg auth "${component_shas[catcar-auth-function]}" \
+  --arg app "${component_shas[catcar-os-service]}" --arg auth "${component_shas[catcar-auth-function]}" \
   --arg database "${component_shas[catcar-database-infra]}" --arg kubernetesSha "${component_shas[catcar-kubernetes-infra]}" \
   --slurpfile checks "$SMOKE_RESULT_FILE" \
-  '{platformSha:$platformSha,componentShas:{"catcar-app":$app,"catcar-auth-function":$auth,"catcar-database-infra":$database,"catcar-kubernetes-infra":$kubernetesSha},dirty:$dirty,sdk:$sdk,aspire:$aspire,kind:$kind,kubernetes:$kubernetes,apiImage:$apiImage,authFunctionImage:$authFunctionImage,imageIds:{api:$apiImageId,authFunction:$authFunctionImageId},imageConfigDigests:{api:$apiConfig,authFunction:$authConfig},registryDigests:{api:$apiImage,authFunction:$authFunctionImage},runningImageIds:{api:$apiRunning,authFunction:$authRunning,maintenance:$jobRunning},checks:$checks[0]}' > "$ARTIFACTS/validation.json"
+  '{platformSha:$platformSha,componentShas:{"catcar-os-service":$app,"catcar-auth-function":$auth,"catcar-database-infra":$database,"catcar-kubernetes-infra":$kubernetesSha},dirty:$dirty,sdk:$sdk,aspire:$aspire,kind:$kind,kubernetes:$kubernetes,apiImage:$apiImage,authFunctionImage:$authFunctionImage,imageIds:{api:$apiImageId,authFunction:$authFunctionImageId},imageConfigDigests:{api:$apiConfig,authFunction:$authConfig},registryDigests:{api:$apiImage,authFunction:$authFunctionImage},runningImageIds:{api:$apiRunning,authFunction:$authRunning,maintenance:$jobRunning},checks:$checks[0]}' > "$ARTIFACTS/validation.json"
 echo "Kind validation passed; evidence: $ARTIFACTS/validation.json"

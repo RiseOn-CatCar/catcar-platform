@@ -1,6 +1,6 @@
-[submodule "catcar-app"]
-	path = catcar-app
-	url = https://github.com/RiseOn-CatCar/catcar-app.git
+[submodule "catcar-os-service"]
+	path = catcar-os-service
+	url = https://github.com/RiseOn-CatCar/catcar-os-service.git
 [submodule "catcar-auth-function"]
 	path = catcar-auth-function
 	url = https://github.com/RiseOn-CatCar/catcar-auth-function.git
@@ -10,3 +10,9 @@
 [submodule "catcar-kubernetes-infra"]
 	path = catcar-kubernetes-infra
 	url = https://github.com/RiseOn-CatCar/catcar-kubernetes-infra.git
+[submodule "catcar-billing-service"]
+	path = catcar-billing-service
+	url = https://github.com/RiseOn-CatCar/catcar-billing-service.git
+[submodule "catcar-execution-service"]
+	path = catcar-execution-service
+	url = https://github.com/RiseOn-CatCar/catcar-execution-service.git

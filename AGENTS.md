@@ -14,52 +14,34 @@
 ## Architecture & Data Flow
 
 ### Umbrella Meta-Repository Topology
-The platform is organized as four synchronized Git submodules/repositories:
+The platform is organized as six synchronized Git submodules/repositories:
 
 ```mermaid
 flowchart TD
     Platform["catcar-platform (Meta-Repository)"]
-    Platform -->|submodule| App["catcar-app (Modular Monolith & Aspire AppHost)"]
+    Platform -->|submodule| App["catcar-os-service (Work Orders)"]
+    Platform -->|submodule| Billing["catcar-billing-service (Billing)"]
+    Platform -->|submodule| Execution["catcar-execution-service (Execution)"]
     Platform -->|submodule| Auth["catcar-auth-function (Serverless Azure Function)"]
     Platform -->|submodule| DB["catcar-database-infra (PostgreSQL & Key Vault IaC)"]
     Platform -->|submodule| K8s["catcar-kubernetes-infra (AKS, APIM, ACR IaC)"]
 ```
 
-1. **`catcar-app`**: .NET 10 Modular Monolith containing all core business domains, Vertical Slice Architecture, EF Core persistence, Wolverine messaging, and .NET Aspire AppHost orchestration.
-2. **`catcar-auth-function`**: Serverless Azure Functions Isolated Worker (.NET 10) providing customer CPF authentication and JWT issuance with read-only database access.
-3. **`catcar-database-infra`**: Terraform configuration provisioning Azure Database for PostgreSQL Flexible Server 17, Azure Key Vault, Private DNS zones, and Private Endpoints.
-4. **`catcar-kubernetes-infra`**: Terraform configuration provisioning Azure Virtual Network, AKS cluster, Azure API Management (APIM), Azure Container Registry (ACR), and Azure Monitor alerting.
+1. **`catcar-os-service`**: Work orders, customers, vehicles and identity; coordinates the work-order saga.
+2. **`catcar-billing-service`**: Budgets, communications and payments.
+3. **`catcar-execution-service`**: Catalog, inventory and repair execution.
+4. **`catcar-auth-function`**: Customer authentication and JWT issuance.
+5. **`catcar-database-infra`**: PostgreSQL and secrets infrastructure.
+6. **`catcar-kubernetes-infra`**: AKS, APIM, ACR and monitoring infrastructure.
 
-### Bounded Contexts & Database Isolation (`catcar-app`)
-`catcar-app` strictly enforces Domain-Driven Design (DDD) with four autonomous Bounded Contexts:
+The platform-level AppHost is `aspire/CatCar.AppHost/CatCar.AppHost.csproj`. The local services use separate PostgreSQL databases and RabbitMQ. The existing AKS release remains the Phase 3 single-image path; multi-service AKS deployment is outside this Phase 4 change.
 
-| Bounded Context | Type | Responsibilities & Aggregates | PostgreSQL Schema |
-| :--- | :--- | :--- | :--- |
-| **`ServiceOperations`** | Core | `WorkOrder`, `Budget`, `Customer`, `Vehicle` | `service_operations` |
-| **`CatalogInventory`** | Supporting | `CatalogedService`, `InventoryItem`, `InventoryReservation` | `catalog_inventory` |
-| **`Communication`** | Supporting | `ExternalAccessToken`, email notification dispatchers | `communication` |
-| **`IdentityAccess`** | Generic | `AdministrativeUser`, roles, Argon2id hashing, admin JWT | `identity_access` |
-
-### Architectural Invariants & NetArchTest Rules
-- **Context Isolation**: No Bounded Context may reference another context's assembly or namespace.
-- **Layer Direction**: Domain entities and Vertical Slice Features must never reference `Microsoft.EntityFrameworkCore` or infrastructure types.
-- **SharedKernel Purity**: `src/SharedKernel` contains only tactical DDD primitives (`Entity<TId>`, `ValueObject`, `IAggregateRoot`, `IDomainEvent`, `IIntegrationEvent`, `BusinessRuleViolatedException`) with zero business logic or external library dependencies.
-- **Vertical Slice Structure**: Each context must strictly follow `Domain/`, `Features/<UseCase>/`, `Infrastructure/`, and optional `Integrations/` folder layouts.
-
-### Data Flow & Integration Patterns
-1. **Asynchronous Cross-Context Integration (Transactional Outbox)**:
-   - Aggregates record domain events and publish `IIntegrationEvent` contracts from `src/Contracts`.
-   - Events are written to the Wolverine PostgreSQL transactional outbox within the same database transaction via `IDbContextOutbox<TDbContext>.PublishAsync(...)`.
-   - Wolverine's durable outbox background dispatcher relays events to consumers asynchronously.
-   - *Example*: `BudgetApprovedIntegrationEvent` (from `ServiceOperations`) is consumed by `BudgetApprovedHandler` in `CatalogInventory` to reserve stock items.
-2. **Synchronous In-Process Queries (Anti-Corruption Layer - ACL)**:
-   - When one context needs read-only data from another, direct database queries across schemas are forbidden.
-   - The consumer calls an ACL interface (e.g., `ICatalogInventoryAcl`) that dispatches an in-process query via `IMessageBus.InvokeAsync<TResponse>(query)`.
-   - The ACL maps the contract DTO response into local domain value objects.
-3. **Optimistic Concurrency & Auditing**:
-   - Entities map PostgreSQL's native `xmin` system column as a row version token (`.HasColumnType("xid").IsRowVersion()`).
-   - `AuditInterceptor` automatically populates `created_at`, `updated_at`, `created_by`, and `updated_by` shadow properties on `SaveChanges`.
-   - Entity IDs use time-ordered UUID v7 (`Guid.CreateVersion7()`).
+### Architectural Invariants & Integration
+- Services own their data and do not access another service's database directly.
+- Services communicate via versioned messages over RabbitMQ and service APIs for synchronous queries.
+- Preserve domain boundaries and keep each service's domain independent of infrastructure.
+- Use transactional messaging and outbox patterns where supported.
+- Use optimistic concurrency and auditing as appropriate to each service.
 
 ---
 
@@ -78,28 +60,10 @@ catcar-platform/
 │   ├── requirements/                       # Tech Challenge specifications (Fase 1-4)
 │   ├── ddd/                                # Domain-Driven Design artifacts (context map, module structure, glossary)
 │   └── architecture/                       # Cloud topology, ER model, auth sequences, ADRs, and RFCs
-├── catcar-app/                             # Modular Monolith and Aspire AppHost
-│   ├── CatCar.slnx                         # Solution manifest (XML-based slnx format)
-│   ├── Directory.Build.props               # Solution-wide MSBuild compiler flags and analyzers
-│   ├── Directory.Packages.props            # Central Package Management (CPM) versions
-│   ├── src/
-│   │   ├── SharedKernel/                   # Tactical DDD building blocks (Entity, ValueObject, Domain Events)
-│   │   ├── SharedInfrastructure/           # Reusable EF Core naming conventions (SnakeCaseNaming)
-│   │   ├── Contracts/                      # Published Language cross-context integration events & DTOs
-│   │   ├── Contexts/
-│   │   │   ├── ServiceOperations/          # Core Domain: Work Orders, Budgets, Customers, Vehicles
-│   │   │   ├── CatalogInventory/           # Supporting Domain: Cataloged Services, Parts Inventory, Reservations
-│   │   │   ├── Communication/              # Supporting Domain: Single-use approval tokens, Email dispatchers
-│   │   │   └── IdentityAccess/             # Generic Domain: Backoffice users, roles, Argon2id, Admin JWT
-│   │   ├── Api/                            # Composition Root: Minimal APIs, Wolverine routing, Scalar docs
-│   │   └── Host/
-│   │       ├── CatCar.AppHost/             # .NET Aspire AppHost (local orchestration & Kubernetes generation)
-│   │       └── CatCar.ServiceDefaults/     # OpenTelemetry, Health checks, and Resilience defaults
-│   └── tests/
-│       ├── Architecture.Tests/             # NetArchTest architectural boundary fitness functions
-│       ├── SharedKernel.Tests/             # Unit tests for DDD base classes and value objects
-│       ├── Contexts.*/                     # Vertical slice unit & PostgreSQL Testcontainers integration tests
-│       └── E2E/                            # Aspire.Hosting.Testing end-to-end integration tests
+├── aspire/CatCar.AppHost/                  # Platform local orchestration
+├── catcar-os-service/                      # Work orders, customers and identity
+├── catcar-billing-service/                 # Budgets, communications and payments
+├── catcar-execution-service/               # Catalog, inventory and execution
 ├── catcar-auth-function/                   # Serverless Customer Authentication (.NET 10 Isolated Worker)
 │   ├── CatCar.AuthFunction.slnx            # Solution manifest
 │   ├── src/CatCar.AuthFunction/            # Customer CPF/CNPJ verification and JWT issuance
@@ -120,7 +84,7 @@ make help
 # Restore all NuGet packages across all .NET solutions
 make restore
 
-# Build all .NET solutions (modular monolith and auth function)
+# Build configured .NET solutions
 make build
 
 # Run all test suites across all solutions
@@ -162,35 +126,24 @@ make kind-validate
 
 ### Build & Run Commands
 ```bash
-# Build catcar-app in Release mode (treats warnings as errors)
-dotnet build catcar-app/CatCar.slnx -c Release
+# Build the OS service in Release mode
+dotnet build catcar-os-service/CatCar.slnx -c Release
 
 # Build catcar-auth-function
 dotnet build catcar-auth-function/CatCar.AuthFunction.slnx -c Release
 
-# Start Aspire AppHost via .NET CLI
-dotnet run --project catcar-app/src/Host/CatCar.AppHost/CatCar.AppHost.csproj
-
-# Alternatively manage Aspire via aspire CLI tool
-dotnet tool run aspire -- start --apphost catcar-app/src/Host/CatCar.AppHost/CatCar.AppHost.csproj --environment Development
-dotnet tool run aspire -- wait api --status healthy --apphost catcar-app/src/Host/CatCar.AppHost/CatCar.AppHost.csproj
-dotnet tool run aspire -- stop --apphost catcar-app/src/Host/CatCar.AppHost/CatCar.AppHost.csproj
-
-# Run database migrations against target database
-dotnet run --project catcar-app/src/Api/CatCar.Api.csproj -- --migrate
-
-# Run via Docker Compose (PostgreSQL on 5432, API on 8080)
-docker compose -f catcar-app/docker-compose.yml up -d
+# Start the platform Aspire topology
+make dev
 ```
 
 ### Formatting, Linting & Validation
 ```bash
 # Check C# whitespace formatting without modifying files (CI check)
-dotnet format whitespace catcar-app/CatCar.slnx --verify-no-changes --no-restore
+dotnet format whitespace catcar-os-service/CatCar.slnx --verify-no-changes --no-restore
 dotnet format whitespace catcar-auth-function/CatCar.AuthFunction.slnx --verify-no-changes --no-restore
 
 # Fix C# formatting
-dotnet format catcar-app/CatCar.slnx
+dotnet format catcar-os-service/CatCar.slnx
 dotnet format catcar-auth-function/CatCar.AuthFunction.slnx
 
 # Format and validate Terraform files
@@ -273,18 +226,10 @@ Features/WorkOrders/OpenWorkOrder/
 | `docs/architecture/adr/` | Architecture Decision Records (Outbox 001, HPA/APIM 002, Submodule Topology 003). |
 | `docs/architecture/rfc/` | RFC proposals (Cloud Provider 001, PostgreSQL 002, Serverless Auth 003). |
 | `docs/ddd/` | Domain-Driven Design artifacts (context map, module structure, ubiquitous language glossary). |
-| `catcar-app/CatCar.slnx` | Primary solution manifest organizing the modular monolith into 15 projects. |
-| `catcar-app/Directory.Packages.props` | Central Package Management (CPM) manifest pinning all NuGet versions and security overrides. |
-| `catcar-app/Directory.Build.props` | Root MSBuild settings (`net10.0`, `Nullable=enable`, `TreatWarningsAsErrors=true`, `AnalysisMode=All`). |
-| `catcar-app/.editorconfig` | Code style configuration enforcing 4 spaces, LF, max line 160 chars, and file-scoped namespaces. |
-| `catcar-app/src/Api/Program.cs` | Modular monolith composition root: registers Serilog, Wolverine outbox/bus, Swagger/Scalar docs, and maps endpoint route groups. |
-| `catcar-app/src/Host/CatCar.AppHost/AppHost.cs` | Dual-mode .NET Aspire AppHost orchestrating PostgreSQL, Azurite, CatCar.Api, and CatCar.AuthFunction. |
-| `catcar-app/src/Host/CatCar.AppHost/KubernetesPublishingExtensions.cs` | Production workload hardening: non-root execution, dropped capabilities, probes, and HPA autoscaling (2–10 replicas). |
-| `catcar-app/src/Host/CatCar.ServiceDefaults/Extensions.cs` | Shared host extensions for OpenTelemetry tracing/metrics, health endpoints (`/health/live`, `/health/ready`), and resilience. |
-| `catcar-app/src/SharedKernel/Entity.cs` | Tactical DDD base primitives (`Entity<TId>`, `ValueObject`, `IAggregateRoot`, `IDomainEvent`, `IIntegrationEvent`). |
-| `catcar-app/src/Contracts/CatCar.Contracts.csproj` | Published Language event contracts published across context boundaries via Wolverine outbox. |
-| `catcar-app/src/Contexts/ServiceOperations/Domain/WorkOrders/WorkOrder.cs` | Central repair order aggregate root governing status transitions, budget assignments, and execution milestones. |
-| `catcar-app/src/Contexts/ServiceOperations/Infrastructure/ServiceOperationsDbContext.cs` | Core DbContext mapping `service_operations` schema, `xmin` optimistic concurrency, and audit interceptors. |
+| `aspire/CatCar.AppHost/CatCar.AppHost.csproj` | Local platform AppHost for services and their dependencies. |
+| `catcar-os-service/CatCar.slnx` | OS service solution manifest. |
+| `catcar-os-service/Directory.Packages.props` | OS service central package versions. |
+| `catcar-os-service/src/Api/Program.cs` | OS service API composition root. |
 | `catcar-auth-function/src/CatCar.AuthFunction/Program.cs` | Serverless customer CPF authentication function worker entry point. |
 | `catcar-database-infra/main.tf` | Terraform root module for PostgreSQL 17 Flexible Server, Key Vault, and Private Endpoints. |
 | `catcar-kubernetes-infra/main.tf` | Terraform root module for AKS cluster, Azure API Management (APIM), ACR, and VNet. |
@@ -304,7 +249,7 @@ Features/WorkOrders/OpenWorkOrder/
   - `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`: All C# compiler warnings break the build.
   - `<Nullable>enable</Nullable>`: Nullable reference types are strictly enforced.
   - `<AnalysisMode>All</AnalysisMode>`: Highest Roslyn code analysis enforcement.
-- **Local .NET Tools (`catcar-app/dotnet-tools.json`)**:
+- **Local .NET Tools (`catcar-os-service/dotnet-tools.json`)**:
   - `dotnet-ef` (`10.0.12`): EF Core database migrations.
   - `dotnet-sonarscanner` (`11.3.0`): SonarQube Cloud quality analysis.
   - `aspire.cli` (`17.0.0`): .NET Aspire orchestration and manifest generation.
@@ -329,20 +274,20 @@ Features/WorkOrders/OpenWorkOrder/
 make test
 
 # Run tests in Release mode without rebuild
-dotnet test catcar-app/CatCar.slnx --no-build -c Release
+dotnet test catcar-os-service/CatCar.slnx --no-build -c Release
 
 # Run tests with OpenCover coverage collection (matches CI)
-dotnet test catcar-app/CatCar.slnx --no-build -c Release \
+dotnet test catcar-os-service/CatCar.slnx --no-build -c Release \
   --collect:"XPlat Code Coverage" \
   --results-directory ./TestResults/Coverage \
   --logger "trx;LogFileName=all-tests.trx" \
   -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
 # Filter test execution by slice or layer
-dotnet test catcar-app/CatCar.slnx -c Release --filter "FullyQualifiedName~Architecture"
-dotnet test catcar-app/CatCar.slnx -c Release --filter "FullyQualifiedName~SharedKernel"
-dotnet test catcar-app/CatCar.slnx -c Release --filter "FullyQualifiedName~ServiceOperations"
-dotnet test catcar-app/CatCar.slnx -c Release --filter "FullyQualifiedName~E2E"
+dotnet test catcar-os-service/CatCar.slnx -c Release --filter "FullyQualifiedName~Architecture"
+dotnet test catcar-os-service/CatCar.slnx -c Release --filter "FullyQualifiedName~SharedKernel"
+dotnet test catcar-os-service/CatCar.slnx -c Release --filter "FullyQualifiedName~ServiceOperations"
+dotnet test catcar-os-service/CatCar.slnx -c Release --filter "FullyQualifiedName~E2E"
 
 # Run customer auth function tests
 dotnet test catcar-auth-function/CatCar.AuthFunction.slnx -c Release

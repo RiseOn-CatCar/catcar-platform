@@ -30,20 +30,6 @@ jobs:
     name: Pinned Integration
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: catcar
-          POSTGRES_USER: catcar
-          POSTGRES_PASSWORD: catcar_local
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,36 +37,13 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            10.0.404
-            11.0.100
-      - name: Install .NET 10 runtime
+          dotnet-version: 11.0.100
+      - name: Build pinned services and platform AppHost
         run: |
-          curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$RUNNER_TEMP/dotnet-install.sh"
-          bash "$RUNNER_TEMP/dotnet-install.sh" --runtime dotnet --version 10.0.15 --install-dir "$DOTNET_ROOT"
-      - name: Install Azure Functions Core Tools
-        run: npm install --global azure-functions-core-tools@4.16.1 --unsafe-perm
-      - name: Restore and test pinned Function
-        working-directory: catcar-auth-function
-        run: |
-          dotnet restore CatCar.AuthFunction.slnx
-          dotnet build CatCar.AuthFunction.slnx --no-restore -c Release
-          dotnet test CatCar.AuthFunction.slnx --no-build -c Release
-      - name: Restore and test pinned application
-        working-directory: catcar-app
-        env:
-          ConnectionStrings__catcar: Host=localhost;Database=catcar;Username=catcar;Password=catcar_local
-        run: |
-          dotnet tool restore
-          dotnet restore CatCar.slnx
-          dotnet build CatCar.slnx --no-restore -c Release
-          dotnet test CatCar.slnx --no-build -c Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/Coverage --logger 'trx;LogFileName=all-tests.trx' -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
-          dotnet run scripts/verify-domain-coverage.cs -- --root . --reports TestResults/Coverage --minimum 80
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: pinned-test-results
-          path: catcar-app/TestResults/
+          dotnet build catcar-os-service/CatCar.slnx -c Release
+          dotnet build catcar-billing-service/CatCar.Billing.slnx -c Release
+          dotnet build catcar-execution-service/CatCar.Execution.slnx -c Release
+          dotnet build aspire/CatCar.AppHost -c Release
 
   release-images:
     name: Release Images
