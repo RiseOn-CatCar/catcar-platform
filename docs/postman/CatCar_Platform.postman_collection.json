@@ -1,12 +1,20 @@
 {
   "info": {
     "_postman_id": "5ad727fd-8da9-4aa1-963a-8e5d2f1866e4",
-    "name": "CatCar Platform — Fase 3 Tech Challenge",
-    "description": "Run folders in order. Set unique, valid synthetic CPFs, an unused plate and SKU, and a real controlled test mailbox. apiBaseUrl and authBaseUrl are origins without /api. healthBaseUrl is the local API origin, or apiBaseUrl + /api for APIM. Copy each one-time link from the mailbox into Postman Vault as approvalTokenA or approvalTokenB; never export or log it. Run the approval and rejection folders separately after receiving each email. JWTs and IDs are held in collection variables for this session; clear them after use. The missing-claim test requires a valid signed Customer token without customer_id or name identifier, supplied in Vault as customerTokenWithoutClaim; it tests the API directly because APIM rejects such a token before forwarding it.",
+    "name": "CatCar Platform — Fase 4 Tech Challenge",
+    "description": "Microservices Phase 4 collection. Run folders in order. Set osBaseUrl, billingBaseUrl and executionBaseUrl to the HTTP origins of the three services (from the Aspire dashboard or port-forward), authBaseUrl to the authentication function origin, adminEmail/adminPassword, unique valid synthetic CPFs, an unused plate and SKU, and a controlled test mailbox (Mailpit when running locally). Folder 2 starts the WorkOrderSaga with POST .../work-orders/{id}/budget (202 Accepted). Copy the one-time approval links from the mailbox into Postman Vault as approvalTokenA and approvalTokenB (only the raw token after /approval-links/, without the path) and never export or log them. Folder 3 requires a confirmed Mercado Pago payment for execution; without credentials the payment fails and the saga compensates (ReleaseParts and CancelBudget). Start/complete/fail return 409 when the job is not in the required state. JWTs and ids are held in collection variables for this session; clear them after use.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
-    { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.variables.set('correlationId', pm.variables.replaceIn('{{$guid}}'));"] } }
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.variables.set('correlationId', pm.variables.replaceIn('{{$guid}}'));"
+        ]
+      }
+    }
   ],
   "item": [
     {
@@ -14,105 +22,1688 @@
       "item": [
         {
           "name": "Login administrator",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Administrator login succeeds', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { const token = pm.response.json().accessToken; pm.test('accessToken returned', () => pm.expect(token).to.be.a('string').and.not.empty); pm.collectionVariables.set('adminToken', token); }"] } }],
-          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/identity-access/auth/login", "body": { "mode": "raw", "raw": "{\"email\":\"{{adminEmail}}\",\"password\":\"{{adminPassword}}\"}" } }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/identity-access/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{adminEmail}}\",\"password\":\"{{adminPassword}}\"}"
+            },
+            "description": "Anonymous. Issues the administrative JWT validated by all three services."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Administrator login succeeds', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) { const token = pm.response.json().accessToken; pm.test('accessToken returned', () => pm.expect(token).to.be.a('string').and.not.empty); pm.collectionVariables.set('adminToken', token); }"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Create service",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Service created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('serviceId', pm.response.json().id);"] } }],
-          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/catalog-inventory/services", "body": { "mode": "raw", "raw": "{\"name\":\"CatCar Smoke inspection\",\"description\":\"Smoke test inspection\",\"estimatedDurationMinutes\":60,\"price\":180}" } }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/catalog-inventory/services",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"CatCar Smoke inspection\",\"description\":\"Smoke test inspection\",\"estimatedDurationMinutes\":60,\"price\":180}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Service created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('serviceId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Create inventory item",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Item created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('itemId', pm.response.json().id);"] } }],
-          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/catalog-inventory/inventory-items", "body": { "mode": "raw", "raw": "{\"sku\":\"{{itemSku}}\",\"name\":\"CatCar Smoke part\",\"description\":\"Smoke test part\",\"unitPrice\":250,\"initialQuantity\":20,\"minimumStockThreshold\":5}" } }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/catalog-inventory/inventory-items",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"sku\":\"{{itemSku}}\",\"name\":\"CatCar Smoke part\",\"description\":\"Smoke test part\",\"unitPrice\":250,\"initialQuantity\":20,\"minimumStockThreshold\":5}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Item created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('itemId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List services",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/catalog-inventory/services?onlyActive=true"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Services listed', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Adjust inventory stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/catalog-inventory/inventory-items/{{itemId}}/stock-movements",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"movementType\":\"Entrada\",\"quantity\":5,\"reason\":\"Restock for smoke run\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Stock adjusted', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Create customer A",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer A created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('customerIdA', pm.response.json().id);"] } }],
-          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/customers", "body": { "mode": "raw", "raw": "{\"document\":\"{{customerDocumentA}}\",\"name\":\"CatCar Smoke A\",\"phone\":\"+5511999999999\",\"email\":\"{{smokeCustomerEmail}}\"}" } }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/customers",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"document\":\"{{customerDocumentA}}\",\"name\":\"CatCar Smoke A\",\"phone\":\"+5511999999999\",\"email\":\"{{smokeCustomerEmail}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer A created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('customerIdA', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Create customer B",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer B created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('customerIdB', pm.response.json().id);"] } }],
-          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/customers", "body": { "mode": "raw", "raw": "{\"document\":\"{{customerDocumentB}}\",\"name\":\"CatCar Smoke B\",\"phone\":\"+5511999999999\",\"email\":\"{{smokeCustomerEmail}}\"}" } }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/customers",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"document\":\"{{customerDocumentB}}\",\"name\":\"CatCar Smoke B\",\"phone\":\"+5511999999999\",\"email\":\"{{smokeCustomerEmail}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer B created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('customerIdB', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Register vehicle A",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Vehicle created', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('vehicleIdA', pm.response.json().id);"] } }],
-          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/vehicles", "body": { "mode": "raw", "raw": "{\"customerId\":\"{{customerIdA}}\",\"plate\":\"{{vehiclePlate}}\",\"brand\":\"Toyota\",\"model\":\"Corolla\",\"manufactureYear\":2023}" } }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/vehicles",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{customerIdA}}\",\"plate\":\"{{vehiclePlate}}\",\"brand\":\"Toyota\",\"model\":\"Corolla\",\"manufactureYear\":2023}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vehicle created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('vehicleIdA', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Authenticate customer A",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer A authenticated', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { const token = pm.response.json().token; pm.test('token returned', () => pm.expect(token).to.be.a('string').and.not.empty); pm.collectionVariables.set('customerTokenA', token); }"] } }],
-          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"{{customerDocumentA}}\"}" } }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{authBaseUrl}}/api/auth/customer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"documentNumber\":\"{{customerDocumentA}}\"}"
+            },
+            "description": "Azure Function. Still reads the customers table of catcar_os (Phase 4 technical debt)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer A authenticated', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('customerTokenA', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Authenticate customer B",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer B authenticated', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { const token = pm.response.json().token; pm.test('token returned', () => pm.expect(token).to.be.a('string').and.not.empty); pm.collectionVariables.set('customerTokenB', token); }"] } }],
-          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"{{customerDocumentB}}\"}" } }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{authBaseUrl}}/api/auth/customer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"documentNumber\":\"{{customerDocumentB}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer B authenticated', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('customerTokenB', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "2. Issue budget A",
+      "name": "2. Open work order A and start saga",
       "item": [
         {
           "name": "Open work order A",
-          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Work order opened', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('workOrderIdA', pm.response.json().workOrderId);"] } }],
-          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders", "body": { "mode": "raw", "raw": "{\"customerId\":\"{{customerIdA}}\",\"vehicleId\":\"{{vehicleIdA}}\",\"initialDescription\":\"CatCar Smoke approval\",\"services\":[],\"parts\":[]}" } }
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{customerIdA}}\",\"vehicleId\":\"{{vehicleIdA}}\",\"initialDescription\":\"CatCar Smoke approval\",\"services\":[],\"parts\":[]}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Work order opened', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('workOrderIdA', pm.response.json().workOrderId);"
+                ]
+              }
+            }
+          ]
         },
-        { "name": "Start diagnosis A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Diagnosis started', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/start-diagnosis" } },
-        { "name": "Add service A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Service added', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/services", "body": { "mode": "raw", "raw": "{\"catalogedServiceId\":\"{{serviceId}}\",\"quantity\":1}" } } },
-        { "name": "Add part A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Part added', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/parts", "body": { "mode": "raw", "raw": "{\"inventoryItemId\":\"{{itemId}}\",\"quantity\":1}" } } },
-        { "name": "Issue budget A once", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Budget issued', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('budgetIdA', pm.response.json().budgetId);"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/budget", "description": "Wait for the real email and save its raw link token to Vault as approvalTokenA before proceeding." } }
+        {
+          "name": "Start diagnosis A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/start-diagnosis"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Diagnosis started', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add service A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/services",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"catalogedServiceId\":\"{{serviceId}}\",\"quantity\":1}"
+            },
+            "description": "OS service reads the catalog from the Execution service over internal REST."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Service added', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add part A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/parts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"inventoryItemId\":\"{{itemId}}\",\"quantity\":1}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Part added', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue budget A (starts saga)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/budget",
+            "description": "Creates WorkOrderSaga, publishes catcar.os.request-budget.v1 and schedules ApprovalTimeout (default 72h). No budget id is returned: read it from billing afterwards or copy the approval link from the e-mail (Mailpit)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Saga started (202 Accepted)', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue budget A again (rejected)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/budget"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('A budget request is already in progress', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List budgets of work order A",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/work-orders/{{workOrderIdA}}/budgets"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Budgets listed', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) { const budgets = pm.response.json(); if (budgets.length > 0) { pm.collectionVariables.set('budgetIdA', budgets[0].id); pm.test('Budget issued by billing', () => pm.expect(budgets[0].status).to.be.a('string')); } }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get budget A",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/budgets/{{budgetIdA}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Budget document available', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
       ]
     },
     {
-      "name": "3. Approve and finish A",
+      "name": "3. Approve, pay and execute A",
       "item": [
-        { "name": "Approval details A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Link details available', () => pm.response.to.have.status(200));"] } }], "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenA}}" } },
-        { "name": "Approve A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Approval accepted', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) { pm.collectionVariables.set('pollStartedAt', String(Date.now())); pm.test('Commercial approval does not start execution', () => { pm.expect(pm.response.json().budgetStatus).to.eql('Approved'); pm.expect(pm.response.json().workOrderStatus).to.eql('AwaitingApproval'); }); }"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenA}}/decision", "body": { "mode": "raw", "raw": "{\"approved\":true,\"reason\":null}" } } },
-        { "name": "Repeat decision A — single use", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Used token rejected', () => pm.response.to.have.status(400));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenA}}/decision", "body": { "mode": "raw", "raw": "{\"approved\":true,\"reason\":null}" } } },
-        { "name": "Poll progress A until execution", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Progress available', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) {", "  const status = pm.response.json().status;", "  if (status === 'InExecution') { pm.test('Inventory confirmed execution', () => pm.expect(status).to.eql('InExecution')); pm.collectionVariables.unset('pollStartedAt'); }", "  else if (status === 'AwaitingApproval' && Date.now() - Number(pm.collectionVariables.get('pollStartedAt')) < 120000) { postman.setNextRequest('Poll progress A until execution'); }", "  else { pm.test('Inventory confirmed within 120 seconds', () => pm.expect(status).to.eql('InExecution')); postman.setNextRequest(null); }", "} else { postman.setNextRequest(null); }"] } }], "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{customerTokenA}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/progress", "description": "Run in Collection Runner after approval; repeats until InExecution or 120 seconds. Failure stops the run before completion." } },
-        { "name": "Complete A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Work order completed', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/complete" } },
-        { "name": "Deliver A", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Work order delivered', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/deliver" } }
+        {
+          "name": "Approval details A",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/approval-links/{{$vault:approvalTokenA}}",
+            "description": "Anonymous; token is single-use and comes from the e-mail link (Mailpit inbox)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Link details available', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/approval-links/{{$vault:approvalTokenA}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approved\":true,\"reason\":null}"
+            },
+            "description": "Publishes catcar.billing.budget-approved.v1. The saga then reserves parts, requests payment and schedules PaymentTimeout (default 24h)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Approval accepted', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repeat decision A (single use)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/approval-links/{{$vault:approvalTokenA}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approved\":true,\"reason\":null}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Used token rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List payments of work order A",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/work-orders/{{workOrderIdA}}/payments",
+            "description": "Status Pending until Mercado Pago confirms (webhook or 2-minute polling). Without a configured access token the payment is Failed and the saga releases parts and cancels the budget."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payments listed', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('paymentsSnapshotA', JSON.stringify(pm.response.json()));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll work order A progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerTokenA}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/progress",
+            "description": "AwaitingApproval -> AwaitingPayment -> InExecution (after payment confirmation)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Progress available', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get work order A (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Work order readable', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List execution jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/execution/jobs",
+            "description": "Jobs appear once the saga sends StartExecution after PaymentConfirmed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Execution queue listed', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get execution job A",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/execution/jobs/{{workOrderIdA}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Execution job available', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Start execution A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/execution/jobs/{{workOrderIdA}}/start",
+            "description": "204 on success; 409 when the job is not Queued (e.g. payment not confirmed yet)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Execution started or already running', () => pm.expect(pm.response.code).to.be.oneOf([204, 409]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complete execution A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/execution/jobs/{{workOrderIdA}}/complete",
+            "description": "Consumes reserved parts and publishes catcar.execution.execution-completed.v1; the saga marks the work order Completed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Execution completed or not in progress', () => pm.expect(pm.response.code).to.be.oneOf([204, 409]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deliver work order A",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/deliver"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivered or invalid transition', () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                ]
+              }
+            }
+          ]
+        }
       ]
     },
     {
-      "name": "4. Issue separate rejection budget B",
+      "name": "4. Rejection and compensation (work order B)",
       "item": [
-        { "name": "Open work order B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Second work order opened', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('workOrderIdB', pm.response.json().workOrderId);"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders", "body": { "mode": "raw", "raw": "{\"customerId\":\"{{customerIdA}}\",\"vehicleId\":\"{{vehicleIdA}}\",\"initialDescription\":\"CatCar Smoke rejection\",\"services\":[],\"parts\":[]}" } } },
-        { "name": "Start diagnosis B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Diagnosis started', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/start-diagnosis" } },
-        { "name": "Add service B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Service added', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/services", "body": { "mode": "raw", "raw": "{\"catalogedServiceId\":\"{{serviceId}}\",\"quantity\":1}" } } },
-        { "name": "Add part B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Part added', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/parts", "body": { "mode": "raw", "raw": "{\"inventoryItemId\":\"{{itemId}}\",\"quantity\":1}" } } },
-        { "name": "Issue budget B once", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Budget issued', () => pm.response.to.have.status(201));", "if (pm.response.code === 201) pm.collectionVariables.set('budgetIdB', pm.response.json().budgetId);"] } }], "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/budget", "description": "Wait for the second real email and save its raw link token to Vault as approvalTokenB." } }
+        {
+          "name": "Open work order B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerId\":\"{{customerIdA}}\",\"vehicleId\":\"{{vehicleIdA}}\",\"initialDescription\":\"CatCar Smoke rejection\",\"services\":[],\"parts\":[]}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Second work order opened', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('workOrderIdB', pm.response.json().workOrderId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Start diagnosis B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/start-diagnosis"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Diagnosis started', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add service B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/services",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"catalogedServiceId\":\"{{serviceId}}\",\"quantity\":1}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Service added', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add part B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/parts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"inventoryItemId\":\"{{itemId}}\",\"quantity\":1}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Part added', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue budget B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdB}}/budget"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Saga started for B', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approval details B",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/approval-links/{{$vault:approvalTokenB}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Link details available', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject B",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/approval-links/{{$vault:approvalTokenB}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approved\":false,\"reason\":\"Customer declined the proposal.\"}"
+            },
+            "description": "catcar.billing.budget-rejected.v1: the saga returns the work order to InDiagnosis without compensations."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejection accepted', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fail execution B (compensation demo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/execution/jobs/{{workOrderIdA}}/fail",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"reason\":\"Demonstrate compensation: refund payment and release parts\"}"
+            },
+            "description": "Only valid for a job InProgress. catcar.execution.execution-failed.v1 makes the saga publish RefundPayment and ReleaseParts and cancel the work order."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Fail registered or not in progress', () => pm.expect(pm.response.code).to.be.oneOf([204, 400, 404, 409]));"
+                ]
+              }
+            }
+          ]
+        }
       ]
     },
     {
-      "name": "5. Reject B",
+      "name": "5. Negative cases",
       "item": [
-        { "name": "Approval details B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Link details available', () => pm.response.to.have.status(200));"] } }], "request": { "method": "GET", "header": [{ "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenB}}" } },
-        { "name": "Reject B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Rejection accepted', () => pm.response.to.have.status(200));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/communication/approval-links/{{$vault:approvalTokenB}}/decision", "body": { "mode": "raw", "raw": "{\"approved\":false,\"reason\":\"Customer declined the proposal.\"}" } } }
+        {
+          "name": "Invalid CPF",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{authBaseUrl}}/api/auth/customer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"documentNumber\":\"00000000000\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid CPF rejected', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid CPF not registered",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{authBaseUrl}}/api/auth/customer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"documentNumber\":\"{{unregisteredCustomerDocument}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Unknown customer rejected', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer B cannot see A progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerTokenB}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/progress"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Different owner receives 404', () => { pm.response.to.have.status(404); pm.expect(pm.response.json().detail).to.eql('Work order not found.'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Billing without token is unauthorized",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/work-orders/{{workOrderIdA}}/budgets"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Administrative JWT required', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Execution queue without token is unauthorized",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/api/v1/execution/jobs"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Administrative JWT required', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown approval link",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/approval-links/nonexistent-token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Unknown token rejected', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mercado Pago webhook without signature",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/api/v1/billing/webhooks/mercadopago?data.id=12345",
+            "description": "Valid notifications carry x-signature and x-request-id and are reconciled against the stored payment."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Missing or invalid signature rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 401]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate customer B",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/customers/{{customerIdB}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"isActive\":false}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer deactivated', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Inactive customer authentication",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{authBaseUrl}}/api/auth/customer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"documentNumber\":\"{{customerDocumentB}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Inactive customer rejected', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
       ]
     },
     {
-      "name": "6. Negative cases",
+      "name": "6. Internal catalog and health",
       "item": [
-        { "name": "Invalid CPF", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Invalid CPF rejected', () => pm.response.to.have.status(400));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"00000000000\"}" } } },
-        { "name": "Valid CPF not registered", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Unknown customer rejected', () => pm.response.to.have.status(404));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"{{unregisteredCustomerDocument}}\"}" }, "description": "Supply a valid synthetic CPF known not to be registered." } },
-        { "name": "Customer B cannot see A progress", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Different owner receives 404', () => { pm.response.to.have.status(404); pm.expect(pm.response.json().detail).to.eql('Work order not found.'); });"] } }], "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{customerTokenB}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/progress" } },
-        { "name": "Missing customer claim forbidden", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Missing customer identity forbidden', () => pm.response.to.have.status(403));"] } }], "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{$vault:customerTokenWithoutClaim}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{directApiBaseUrl}}/api/v1/service-operations/work-orders/{{workOrderIdA}}/progress", "description": "Direct API only: use a valid signed Customer token with neither customer_id nor name identifier. APIM intentionally rejects this token earlier." } },
-        { "name": "Deactivate customer B", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Customer deactivated', () => pm.response.to.have.status(200));"] } }], "request": { "method": "PATCH", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/customers/{{customerIdB}}/status", "body": { "mode": "raw", "raw": "{\"isActive\":false}" } } },
-        { "name": "Inactive customer authentication", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Inactive customer rejected', () => pm.response.to.have.status(403));"] } }], "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{authBaseUrl}}/api/auth/customer", "body": { "mode": "raw", "raw": "{\"documentNumber\":\"{{customerDocumentB}}\"}" } } }
-      ]
-    },
-    {
-      "name": "7. Health and metrics",
-      "item": [
-        { "name": "Liveness", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Live', () => pm.response.to.have.status(200));"] } }], "request": { "method": "GET", "url": "{{healthBaseUrl}}/health/live" } },
-        { "name": "Readiness", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Ready', () => pm.response.to.have.status(200));"] } }], "request": { "method": "GET", "url": "{{healthBaseUrl}}/health/ready" } },
-        { "name": "Average execution time", "event": [{ "listen": "test", "script": { "exec": ["pm.test('Metrics available', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) pm.test('Stage averages are numbers or null', () => { const m = pm.response.json(); ['averageDiagnosisTimeHours','averageExecutionTimeHours','averageFinalizationTimeHours'].forEach(k => pm.expect(m[k] === null || typeof m[k] === 'number', k).to.be.true); });"] } }], "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "X-Correlation-Id", "value": "{{correlationId}}" }], "url": "{{apiBaseUrl}}/api/v1/service-operations/work-orders/metrics/average-execution-time", "description": "Stage averages are null when no complete history is observed; null is not zero." } }
+        {
+          "name": "Internal catalog service lookup",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/internal/v1/catalog/services/{{serviceId}}",
+            "description": "In-cluster only; never published in the APIM. Used by the OS service."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Internal service lookup', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Internal catalog part lookup",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/internal/v1/catalog/parts/{{itemId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Internal part lookup', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OS liveness",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/health/live"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OS live', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OS readiness",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/health/ready"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OS ready', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Billing liveness",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/health/live"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Billing live', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Billing readiness",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/health/ready"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Billing ready', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Execution liveness",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/health/live"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Execution live', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Execution readiness",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{executionBaseUrl}}/health/ready"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Execution ready', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Average execution time",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{osBaseUrl}}/api/v1/service-operations/work-orders/metrics/average-execution-time"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Metrics available', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
       ]
     }
   ]

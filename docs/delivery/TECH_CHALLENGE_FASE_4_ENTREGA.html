@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CatCar Platform — Tech Challenge Fase 4</title>
+  <style>
+    @page { size: A4; margin: 16mm 15mm 18mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { color: #172033; font: 10pt/1.48 Arial, Helvetica, sans-serif; margin: 0 auto; max-width: 900px; }
+    h1, h2, h3 { color: #172554; break-after: avoid; page-break-after: avoid; }
+    h1 { border-bottom: 2px solid #2563eb; font-size: 16pt; margin: 1.5em 0 .65em; padding-bottom: 5px; }
+    h2 { border-bottom: 1px solid #dbe3f0; font-size: 12pt; margin: 1.3em 0 .55em; padding-bottom: 3px; }
+    h3 { color: #1d4ed8; font-size: 10.5pt; margin: 1.1em 0 .45em; }
+    p, ul, ol { margin: 0 0 .75em; }
+    li { margin-bottom: .3em; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; page-break-inside: auto; font-size: 8.4pt; }
+    th, td { border: 1px solid #cbd5e1; padding: 5px 6px; vertical-align: top; text-align: left; overflow-wrap: anywhere; }
+    th { background: #eff6ff; color: #172554; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    a { color: #1d4ed8; overflow-wrap: anywhere; text-decoration: none; }
+    code { background: #f1f5f9; border-radius: 2px; font: 8.2pt ui-monospace, SFMono-Regular, Consolas, monospace; padding: 1px 3px; }
+    pre { background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px; overflow-x: auto; }
+    .diagram { margin: 10px 0 16px; text-align: center; }
+    .cover { align-items: center; display: flex; flex-direction: column; justify-content: center; min-height: 250mm; padding: 30mm 12px; text-align: center; break-after: page; page-break-after: always; }
+    .cover h1 { border: 0; font-size: 30pt; margin: 16px 0 10px; padding: 0; }
+    .cover .subtitle { color: #475569; font-size: 14pt; line-height: 1.5; margin: 0; }
+    .cover .meta { color: #475569; line-height: 1.7; margin-top: 72px; }
+    .tag { color: #1d4ed8; font-size: 9pt; font-weight: 700; letter-spacing: .08em; margin: 0; text-transform: uppercase; }
+    @media screen { body { padding: 18mm 15mm; } .cover { min-height: calc(297mm - 36mm); } }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <p class="tag">FIAP — SOAT Software Architecture Pós-Tech</p>
+    <h1>CatCar Platform</h1>
+    <p class="subtitle">Tech Challenge — Fase 4<br>Documento Consolidado de Entrega</p>
+    <p class="meta"><strong>Grupo:</strong> Grupo 274<br><strong>Integrante:</strong> Davi Holanda<br><strong>Turma / Curso:</strong> SOAT — Software Architecture Pós-Tech FIAP<br><strong>Data:</strong> 20 de novembro de 2026</p>
+  </section>
+
+<h1>1. Identificação do grupo</h1>
+<table>
+<thead>
+<tr>
+<th>Campo</th>
+<th>Informação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Nome do grupo</strong></td>
+<td>Grupo 274</td>
+</tr>
+<tr>
+<td><strong>Projeto</strong></td>
+<td>CatCar Platform — Plataforma Integrada de Gestão de Oficina Mecânica</td>
+</tr>
+<tr>
+<td><strong>Integrante</strong></td>
+<td>Davi Holanda</td>
+</tr>
+<tr>
+<td><strong>Turma / Curso</strong></td>
+<td>SOAT — Software Architecture Pós-Tech FIAP</td>
+</tr>
+</tbody>
+</table>
+<h1>2. Repositórios entregues</h1>
+<p>Três microsserviços independentes, cada um com código-fonte, <code>Dockerfile</code>, manifestos Kubernetes (<code>k8s/base</code> e <code>k8s/overlays/ci</code>), pipeline própria (<code>.github/workflows/ci.yml</code>), README com a arquitetura do serviço e evidências de cobertura. Mais o meta-repositório e os componentes de autenticação e infraestrutura mantidos da Fase 3.</p>
+<table>
+<thead>
+<tr>
+<th>Repositório</th>
+<th>Responsabilidade</th>
+<th>Banco de dados</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/RiseOn-CatCar/catcar-os-service">catcar-os-service</a></td>
+<td><strong>OS Service</strong>: ordens de serviço, clientes, veículos e identidade administrativa; hospeda a Saga orquestrada. Renomeado de <code>catcar-app</code>.</td>
+<td>PostgreSQL <code>catcar_os</code> (EF Core)</td>
+</tr>
+<tr>
+<td><a href="https://github.com/RiseOn-CatCar/catcar-billing-service">catcar-billing-service</a></td>
+<td><strong>Billing Service</strong>: orçamentos, links de aprovação, e-mails e pagamentos Mercado Pago.</td>
+<td><strong>Marten</strong> (documentos JSONB) <code>catcar_billing</code></td>
+</tr>
+<tr>
+<td><a href="https://github.com/RiseOn-CatCar/catcar-execution-service">catcar-execution-service</a></td>
+<td><strong>Execution Service</strong>: catálogo de serviços, estoque, reservas e fila de execução.</td>
+<td>PostgreSQL <code>catcar_execution</code> (EF Core)</td>
+</tr>
+<tr>
+<td><a href="https://github.com/RiseOn-CatCar/catcar-platform">catcar-platform</a></td>
+<td>Meta-repositório: submódulos, contratos de mensagens, AppHost do Aspire, coleção Postman e esta entrega.</td>
+<td>—</td>
+</tr>
+<tr>
+<td><a href="https://github.com/RiseOn-CatCar/catcar-auth-function">catcar-auth-function</a></td>
+<td>Azure Function de autenticação do cliente por CPF e emissão de JWT.</td>
+<td>Leitura na tabela de clientes do <code>catcar_os</code> (dívida técnica)</td>
+</tr>
+<tr>
+<td><a href="https://github.com/RiseOn-CatCar/catcar-database-infra">catcar-database-infra</a></td>
+<td>Terraform do PostgreSQL Flexible Server, Key Vault, DNS privado e segredos (Fase 3).</td>
+<td>—</td>
+</tr>
+<tr>
+<td><a href="https://github.com/RiseOn-CatCar/catcar-kubernetes-infra">catcar-kubernetes-infra</a></td>
+<td>Terraform de VNet, AKS, ACR, APIM, Azure Monitor, alertas e workbooks (Fase 3).</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Collection Postman atualizada (v2.1.0):</strong> <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_collection.json"><code>CatCar_Platform.postman_collection.json</code></a> e <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/postman/CatCar_Platform.postman_environment.json">environment</a>, com variáveis de base por serviço (<code>osBaseUrl</code>, <code>billingBaseUrl</code>, <code>executionBaseUrl</code>, <code>authBaseUrl</code>). O OS Service expõe OpenAPI em <code>/docs</code> e <code>/openapi/v1.json</code> nos ambientes <code>Development</code> e <code>LocalKubernetes</code>.</p>
+<h1>3. Vídeo de demonstração</h1>
+<p><strong>Link do vídeo: a ser incluído.</strong> (Upload no YouTube/Vimeo, até 15 minutos, público ou não listado: fluxo completo de uma OS entre os microsserviços, execução da Saga com tratamento de falhas, deploy automatizado com validação de testes e monitoramento dos fluxos distribuídos.)</p>
+<h1>4. Arquitetura geral</h1>
+<div class="diagram"><svg style="max-width:100%;height:auto;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" font-family="Arial, Helvetica, sans-serif">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/></marker>
+<style>
+.t { font-size: 12px; fill: #ffffff; text-anchor: middle; }
+.tb { font-size: 12.5px; font-weight: bold; fill: #ffffff; text-anchor: middle; }
+.lbl { font-size: 10px; fill: #334155; text-anchor: middle; }
+.box { stroke-width: 1.5; }
+.e { stroke: #334155; stroke-width: 1.4; fill: none; marker-end: url(#arrow); }
+.eb { stroke: #334155; stroke-width: 1.4; fill: none; marker-end: url(#arrow); marker-start: url(#arrow); }
+.dash { stroke-dasharray: 4 3; }
+</style></defs>
+<rect class="box" x="10" y="120" width="165" height="60" rx="6" fill="#0f172a" stroke="#94a3b8"/>
+<text class="tb" x="92.5" y="146.0">Clientes</text>
+<text class="t" x="92.5" y="162.0">(web, Postman)</text>
+<rect class="box" x="10" y="250" width="165" height="85" rx="6" fill="#0f172a" stroke="#94a3b8"/>
+<text class="tb" x="92.5" y="272.5">Azure APIM</text>
+<text class="t" x="92.5" y="288.5">+ catcar-auth-function</text>
+<text class="t" x="92.5" y="304.5">CPF do cliente</text>
+<text class="t" x="92.5" y="320.5">(rotas da Fase 3)</text>
+<rect class="box" x="290" y="30" width="300" height="90" rx="6" fill="#1e1b4b" stroke="#818cf8"/>
+<text class="tb" x="440.0" y="63.0">os-service</text>
+<text class="t" x="440.0" y="79.0">OS, clientes, veículos, identidade</text>
+<text class="t" x="440.0" y="95.0">WorkOrderSaga (orquestrador)</text>
+<rect class="box" x="290" y="250" width="300" height="85" rx="6" fill="#1e1b4b" stroke="#818cf8"/>
+<text class="tb" x="440.0" y="280.5">billing-service</text>
+<text class="t" x="440.0" y="296.5">orçamentos, links de aprovação,</text>
+<text class="t" x="440.0" y="312.5">e-mails, pagamentos</text>
+<rect class="box" x="290" y="470" width="300" height="85" rx="6" fill="#1e1b4b" stroke="#818cf8"/>
+<text class="tb" x="440.0" y="500.5">execution-service</text>
+<text class="t" x="440.0" y="516.5">catálogo, estoque,</text>
+<text class="t" x="440.0" y="532.5">fila de execução</text>
+<rect class="box" x="680" y="245" width="300" height="60" rx="6" fill="#78350f" stroke="#fbbf24"/>
+<text class="tb" x="830.0" y="271.0">RabbitMQ + Wolverine</text>
+<text class="t" x="830.0" y="287.0">comandos, eventos; inbox/outbox duráveis</text>
+<path class="box" d="M 740.0 49 L 740.0 97 A 95.0 9 0 0 0 930.0 97 L 930.0 49 Z" fill="#701a75" stroke="#f472b6"/>
+<ellipse class="box" cx="835" cy="49" rx="95.0" ry="9" fill="#701a75" stroke="#f472b6"/>
+<text class="tb" x="835" y="79.0">catcar_os</text>
+<text class="tb" x="835" y="94.0">PostgreSQL / EF Core</text>
+<path class="box" d="M 740.0 344 L 740.0 392 A 95.0 9 0 0 0 930.0 392 L 930.0 344 Z" fill="#701a75" stroke="#f472b6"/>
+<ellipse class="box" cx="835" cy="344" rx="95.0" ry="9" fill="#701a75" stroke="#f472b6"/>
+<text class="tb" x="835" y="374.0">catcar_billing</text>
+<text class="tb" x="835" y="389.0">Marten (JSONB)</text>
+<path class="box" d="M 740.0 514 L 740.0 562 A 95.0 9 0 0 0 930.0 562 L 930.0 514 Z" fill="#701a75" stroke="#f472b6"/>
+<ellipse class="box" cx="835" cy="514" rx="95.0" ry="9" fill="#701a75" stroke="#f472b6"/>
+<text class="tb" x="835" y="544.0">catcar_execution</text>
+<text class="tb" x="835" y="559.0">PostgreSQL / EF Core</text>
+<rect class="box" x="30" y="430" width="220" height="100" rx="6" fill="#0f172a" stroke="#94a3b8"/>
+<text class="tb" x="140.0" y="460.0">Mercado Pago</text>
+<text class="t" x="140.0" y="476.0">checkout, webhook, reembolso</text>
+<text class="t" x="140.0" y="492.0">Mailpit / Azure Comm. Services</text>
+<text class="t" x="140.0" y="508.0">OpenTelemetry + App Insights</text>
+<path class="e" d="M 175 145 C 230 145 230 75 290 75"/>
+<path class="e" d="M 175 165 C 235 165 235 285 290 285"/>
+<path class="e" d="M 175 180 C 250 180 250 512 290 512"/>
+<text class="lbl" x="205" y="112">REST /api/v1/*</text>
+<path class="e dash" d="M 175 262 L 210 262 L 210 14 L 835 14 L 835 40"/>
+<text class="lbl" x="470" y="10">auth-function lê clientes de catcar_os (dívida técnica)</text>
+<path class="e" d="M 590 72 L 740 72"/>
+<path class="e" d="M 590 300 C 660 300 660 368 740 368"/>
+<path class="e" d="M 590 533 L 740 533"/>
+<path class="eb" d="M 590 95 C 648 95 648 245 680 250"/>
+<path class="eb" d="M 590 292 L 680 285"/>
+<path class="eb" d="M 590 512 C 648 512 648 305 680 298"/>
+<text class="lbl" x="632" y="222">comandos</text>
+<text class="lbl" x="632" y="234">e eventos</text>
+<path class="e dash" d="M 470 120 L 470 470"/>
+<text class="lbl" x="560" y="400">REST somente leitura</text>
+<text class="lbl" x="560" y="412">/internal/v1/catalog</text>
+<path class="eb" d="M 290 312 C 200 312 200 415 140 430"/>
+<path class="e dash" d="M 290 322 C 150 335 160 450 130 470"/>
+<path class="e dash" d="M 290 505 C 120 500 120 520 60 525"/>
+<text class="lbl" x="140" y="392">pagamentos, e-mail</text>
+<text class="lbl" x="140" y="404">e OpenTelemetry</text></div>
+<h2>Comunicação entre serviços</h2>
+<ul>
+<li><strong>Assíncrona (principal):</strong> RabbitMQ com <code>WolverineFx.RabbitMQ</code>, roteamento convencional (uma exchange por identidade de mensagem e uma fila por consumidor), inbox e outbox duráveis. Toda mensagem tem <code>[MessageIdentity("catcar.&lt;produtor&gt;.&lt;nome&gt;.v1")]</code>, <code>WorkOrderId</code> e <code>CorrelationId</code>. Cada serviço mantém a <strong>própria cópia</strong> dos tipos (sem biblioteca compartilhada), com testes de contrato que comparam os nomes dos campos serializados.</li>
+<li><strong>Síncrona (exceção, somente leitura):</strong> o OS Service consulta o catálogo do Execution Service em <code>GET /internal/v1/catalog/services/{id}</code> e <code>/parts/{id}</code>, com service discovery do Aspire. As rotas <code>/internal/*</code> não têm autenticação e nunca são publicadas no APIM.</li>
+<li><strong>Isolamento de dados:</strong> nenhum serviço acessa o banco de outro. As informações do cliente necessárias ao Billing viajam nas mensagens (<code>RequestBudget</code>, <code>WorkOrderStatusChanged</code>). Única exceção conhecida: a Function de autenticação lê a tabela de clientes do <code>catcar_os</code> (registrada como dívida técnica).</li>
+<li><strong>Autenticação:</strong> os três serviços validam o mesmo JWT administrativo emitido pelo OS Service; o JWT de cliente é emitido pela Azure Function.</li>
+</ul>
+<p>Contratos detalhados, mensagens e tabela da Saga: <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/messaging-contracts.md"><code>docs/architecture/messaging-contracts.md</code></a>.</p>
+<h1>5. Estratégia do Saga Pattern: orquestração</h1>
+<h2>Escolha e justificativa</h2>
+<p>A Saga é <strong>orquestrada</strong>, implementada pela classe <code>WorkOrderSaga</code> (<code>Wolverine.Saga</code>, <code>Id = WorkOrderId</code>) no OS Service, com estado persistido no EF Core (<code>ServiceOperationsDbContext</code>).</p>
+<ul>
+<li>O fluxo é longo e sequencial (orçamento → aprovação → reserva de peças → pagamento → execução), com <strong>compensações diferentes por etapa</strong>. Na coreografia, essa lógica ficaria espalhada pelos três serviços e cada mudança de fluxo exigiria alterar vários consumidores.</li>
+<li>Estado, timeouts e compensações ficam em um único lugar, o que facilita testar (BDD), auditar e demonstrar.</li>
+<li>O OS Service já é o dono do agregado <code>WorkOrder</code>: a mudança de estado da OS e o estado da Saga são gravados na mesma transação.</li>
+<li>O Wolverine já fornece Saga, <code>TimeoutMessage</code> e outbox transacional, sem um motor de workflow adicional.</li>
+<li>Billing e Execution não conhecem o fluxo: recebem comandos e respondem com eventos; as compensações são comandos idempotentes e sem resposta.</li>
+<li><strong>Custo aceito:</strong> o OS Service é um ponto central de coordenação. O risco é mitigado por inbox/outbox duráveis, retentativas e idempotência (mensagens duplicadas ou fora de estado são ignoradas; <code>NotFound</code> registra log e ignora).</li>
+</ul>
+<h2>Fluxo, estados e compensações</h2>
+<table>
+<thead>
+<tr>
+<th>Mensagem recebida</th>
+<th>Pré-condição na Saga</th>
+<th>Ação na OS</th>
+<th>Mensagens enviadas</th>
+<th>Estado da OS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(início) <code>POST .../work-orders/{id}/budget</code></td>
+<td>OS <code>InDiagnosis</code> com ao menos 1 linha</td>
+<td>—</td>
+<td><code>RequestBudget</code>, <code>ApprovalTimeout</code> agendado</td>
+<td><code>InDiagnosis</code></td>
+</tr>
+<tr>
+<td><code>BudgetIssued</code></td>
+<td>aguardando orçamento</td>
+<td><code>MarkBudgetIssued</code></td>
+<td>—</td>
+<td><code>AwaitingApproval</code></td>
+</tr>
+<tr>
+<td><code>BudgetRejected</code></td>
+<td>aguardando aprovação</td>
+<td><code>RecordApproval(false)</code></td>
+<td>— (fim)</td>
+<td><code>InDiagnosis</code></td>
+</tr>
+<tr>
+<td><code>ApprovalTimeout</code></td>
+<td>aguardando aprovação</td>
+<td><code>Cancel</code></td>
+<td><code>CancelBudget</code> (fim)</td>
+<td><code>Cancelled</code></td>
+</tr>
+<tr>
+<td><code>BudgetApproved</code></td>
+<td>aguardando aprovação</td>
+<td><code>RecordApproval(true)</code></td>
+<td><code>ReserveParts</code></td>
+<td><code>AwaitingApproval</code></td>
+</tr>
+<tr>
+<td><code>PartsReservationFailed</code></td>
+<td>aguardando reserva</td>
+<td><code>RecordInventoryReservationFailure</code></td>
+<td><code>CancelBudget</code> (fim)</td>
+<td><code>InDiagnosis</code></td>
+</tr>
+<tr>
+<td><code>PartsReserved</code></td>
+<td>aguardando reserva</td>
+<td><code>AwaitPayment</code></td>
+<td><code>RequestPayment</code>, <code>PaymentTimeout</code> agendado</td>
+<td><code>AwaitingPayment</code></td>
+</tr>
+<tr>
+<td><code>PaymentFailed</code> ou <code>PaymentTimeout</code></td>
+<td>aguardando pagamento</td>
+<td><code>Cancel</code></td>
+<td><code>ReleaseParts</code>, <code>CancelBudget</code> (fim)</td>
+<td><code>Cancelled</code></td>
+</tr>
+<tr>
+<td><code>PaymentConfirmed</code></td>
+<td>aguardando pagamento</td>
+<td><code>StartExecution</code></td>
+<td><code>StartExecution</code></td>
+<td><code>InExecution</code></td>
+</tr>
+<tr>
+<td><code>ExecutionFailed</code></td>
+<td>em execução</td>
+<td><code>Cancel</code></td>
+<td><code>RefundPayment</code>, <code>ReleaseParts</code> (fim)</td>
+<td><code>Cancelled</code></td>
+</tr>
+<tr>
+<td><code>ExecutionCompleted</code></td>
+<td>em execução</td>
+<td><code>Complete</code></td>
+<td>— (fim)</td>
+<td><code>Completed</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>A entrega (<code>Delivered</code>) continua sendo um comando administrativo fora da Saga; <code>MarkCompleted()</code> é chamado em todo estado final.</li>
+<li>Toda transição publica <code>catcar.os.work-order-status-changed.v1</code>, consumido pelo Billing para os e-mails de status.</li>
+<li><strong>Timeouts:</strong> <code>Saga:ApprovalTimeout</code> (padrão 72 h) e <code>Saga:PaymentTimeout</code> (padrão 24 h), implementados como <code>TimeoutMessage</code> agendada pelo outbox durável.</li>
+<li><strong>Compensações executadas pelos participantes:</strong> <code>CancelBudget</code> cancela o orçamento e expira os tokens de aprovação; <code>ReleaseParts</code> devolve as peças ao estoque; <code>RefundPayment</code> reembolsa no Mercado Pago um pagamento confirmado.</li>
+</ul>
+<h1>6. Justificativa da divisão e das tecnologias</h1>
+<h2>Divisão dos microsserviços</h2>
+<table>
+<thead>
+<tr>
+<th>Serviço</th>
+<th>Bounded context</th>
+<th>Por que separado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OS Service</td>
+<td><code>ServiceOperations</code> (clientes, veículos, OS) e <code>IdentityAccess</code></td>
+<td>Dono do agregado central e do estado da Saga; naturalmente o ponto de consulta de status e histórico. Reaproveitou o núcleo do antigo monólito <code>catcar-app</code>.</td>
+</tr>
+<tr>
+<td>Billing Service</td>
+<td>Orçamentos (<code>Budgets</code>), comunicação (links de aprovação e e-mails) e pagamentos</td>
+<td>Vida própria, integração externa (Mercado Pago), dados de cliente desacoplados por evento e modelo de documentos adequado ao orçamento.</td>
+</tr>
+<tr>
+<td>Execution Service</td>
+<td><code>CatalogInventory</code> (catálogo, estoque, reservas) e fila de execução</td>
+<td>Trabalho operacional da oficina, com concorrência de estoque e fila própria; escala independentemente do atendimento.</td>
+</tr>
+</tbody>
+</table>
+<p>A divisão segue os três serviços sugeridos no enunciado e os bounded contexts já identificados no DDD das fases anteriores. Cada serviço tem repositório, banco, imagem, manifestos e pipeline próprios, e nenhum depende de outro para compilar.</p>
+<h2>Tecnologias</h2>
+<table>
+<thead>
+<tr>
+<th>Tecnologia</th>
+<th>Onde</th>
+<th>Justificativa</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>.NET 11 / ASP.NET Core</td>
+<td>Três serviços</td>
+<td>Mesma plataforma das fases anteriores, com <code>TreatWarningsAsErrors</code>, fatias verticais e DDD.</td>
+</tr>
+<tr>
+<td><strong>PostgreSQL + EF Core</strong></td>
+<td>OS (<code>catcar_os</code>) e Execution (<code>catcar_execution</code>)</td>
+<td>Requisito de banco <strong>relacional (SQL)</strong>. Modelos fortemente relacionais, com integridade referencial, transações e concorrência otimista (<code>xmin</code>) — essencial para que duas reservas não consumam a mesma peça. Reaproveita migrations e repositórios.</td>
+</tr>
+<tr>
+<td><strong>Marten (documentos JSONB no banco <code>catcar_billing</code>)</strong></td>
+<td>Billing</td>
+<td>Requisito de banco <strong>não relacional (NoSQL)</strong>. O orçamento é um agregado que nasce, é lido e muda como um todo: documento único com as linhas embutidas, sem junções nem migrações a cada evolução de formato. <code>Budget</code>, <code>Payment</code>, <code>ExternalAccessToken</code> e <code>BudgetCustomer</code> são documentos com concorrência otimista, consultados por LINQ. O Marten é a integração oficial do Wolverine para inbox, outbox e Saga (<code>IntegrateWithWolverine</code>), o que permite gravar o documento e publicar o evento na mesma transação; para MongoDB existe apenas pacote comunitário. <strong>Tradeoff assumido:</strong> o motor é o PostgreSQL, não um servidor NoSQL separado com escala horizontal própria (MongoDB, Cosmos DB). Em troca há uma única tecnologia operacional, transações ACID entre documentos e fila, e um banco separado que nenhum outro serviço acessa. O risco de não aceitação foi identificado e é mitigado pela documentação do modelo de documentos.</td>
+</tr>
+<tr>
+<td><strong>RabbitMQ</strong></td>
+<td>Mensageria dos três serviços</td>
+<td>Exigido como opção de mensageria no enunciado; roda da mesma forma no Aspire, no kind e no AKS, com painel de administração para inspecionar filas durante a demonstração.</td>
+</tr>
+<tr>
+<td><strong>Wolverine 6</strong></td>
+<td>Três serviços</td>
+<td>Handlers, roteamento convencional, inbox/outbox duráveis, Saga e <code>TimeoutMessage</code>. Evita escrever a infraestrutura de mensageria e garante publicação transacional junto à mudança de estado.</td>
+</tr>
+<tr>
+<td><strong>.NET Aspire (AppHost)</strong></td>
+<td>Desenvolvimento local</td>
+<td>Um único AppHost no meta-repositório sobe PostgreSQL (3 bancos), RabbitMQ, Mailpit, os três serviços e a Function, com service discovery, health checks e dashboard de traces — sem AppHost duplicado por serviço.</td>
+</tr>
+<tr>
+<td><strong>kind (Kubernetes in Docker) no CI</strong></td>
+<td>Job <code>deploy-kind</code> de cada serviço</td>
+<td>Prova o deploy automatizado em Kubernetes (imagem, migração, rollout e smoke) em todo PR, sem custo de nuvem e sem depender do ambiente Azure efêmero.</td>
+</tr>
+<tr>
+<td><strong>SonarCloud</strong></td>
+<td>Job <code>sonar</code> de cada serviço</td>
+<td>Exigência de validação de qualidade no CI: organização <code>riseon</code>, projetos <code>riseon_catcar-*-service</code>, com quality gate bloqueante e cobertura importada do coverlet.</td>
+</tr>
+<tr>
+<td>Reqnroll, xUnit, Testcontainers</td>
+<td>Testes</td>
+<td>BDD executável para a Saga, testes unitários e de integração com PostgreSQL e RabbitMQ reais em containers.</td>
+</tr>
+</tbody>
+</table>
+<h1>7. Testes, BDD e cobertura</h1>
+<table>
+<thead>
+<tr>
+<th>Serviço</th>
+<th>Testes</th>
+<th>Cobertura de linhas (código de <code>src</code>, sem Migrations/Program/gerado)</th>
+<th>Gate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OS Service</td>
+<td>375</td>
+<td><strong>95,81%</strong></td>
+<td>80%</td>
+</tr>
+<tr>
+<td>Billing Service</td>
+<td>172</td>
+<td><strong>91,79%</strong></td>
+<td>80%</td>
+</tr>
+<tr>
+<td>Execution Service</td>
+<td>127</td>
+<td><strong>92,96%</strong></td>
+<td>80%</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>BDD (fluxo completo):</strong> <a href="https://github.com/RiseOn-CatCar/catcar-os-service/blob/main/tests/Contexts/ServiceOperations.Tests/Features/WorkOrders/Saga/WorkOrderSaga.feature"><code>WorkOrderSaga.feature</code></a> (Reqnroll) cobre o fluxo feliz — orçamento, aprovação, reserva de peças, pagamento e execução até <code>Completed</code> — e os cenários de falha: rejeição do orçamento, timeout de aprovação, falha de estoque, falha e timeout de pagamento (liberação de peças e cancelamento do orçamento), falha de execução (reembolso e liberação) e confirmação de pagamento duplicada ignorada. Os passos usam PostgreSQL real (Testcontainers) e um outbox simulado que registra os comandos publicados; os eventos dos outros serviços são entregues aos handlers da Saga.</li>
+<li><strong>Testes de contrato</strong> validam as identidades e os campos das mensagens em cada serviço.</li>
+<li><strong>Evidências por serviço (badges de quality gate e cobertura no README):</strong></li>
+<li>OS Service: <a href="https://sonarcloud.io/project/overview?id=riseon_catcar-os-service">SonarCloud</a> · <a href="https://github.com/RiseOn-CatCar/catcar-os-service/actions/workflows/ci.yml">CI</a> · <a href="https://github.com/RiseOn-CatCar/catcar-os-service/pull/12">PR #12</a></li>
+<li>Billing Service: <a href="https://sonarcloud.io/project/overview?id=riseon_catcar-billing-service">SonarCloud</a> · <a href="https://github.com/RiseOn-CatCar/catcar-billing-service/actions/workflows/ci.yml">CI</a> · <a href="https://github.com/RiseOn-CatCar/catcar-billing-service/pull/1">PR #1</a></li>
+<li>Execution Service: <a href="https://sonarcloud.io/project/overview?id=riseon_catcar-execution-service">SonarCloud</a> · <a href="https://github.com/RiseOn-CatCar/catcar-execution-service/actions/workflows/ci.yml">CI</a> · <a href="https://github.com/RiseOn-CatCar/catcar-execution-service/pull/1">PR #1</a></li>
+<li>O relatório OpenCover de cada execução é publicado como artefato do job <code>build-test</code>.</li>
+</ul>
+<h1>8. CI/CD e proteção de branches</h1>
+<p>Pipeline independente por serviço (<code>.github/workflows/ci.yml</code>), executada em todo pull request e push na <code>main</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Job</th>
+<th>Conteúdo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>build-test</code></td>
+<td>restore, verificação de formatação, build Release, testes com coverlet (OpenCover) e <strong>falha abaixo de 80%</strong> de cobertura de linhas do serviço.</td>
+</tr>
+<tr>
+<td><code>sonar</code></td>
+<td>análise no SonarCloud com cobertura e quality gate em modo wait.</td>
+</tr>
+<tr>
+<td><code>security</code></td>
+<td>Opengrep (SAST), <code>dotnet package list --vulnerable</code> (falha em Critical/High) e Trivy na imagem (falha em CRITICAL/HIGH).</td>
+</tr>
+<tr>
+<td><code>deploy-kind</code></td>
+<td>cluster kind efêmero no runner, build e <code>kind load</code> da imagem, <code>kubectl apply -k k8s/overlays/ci</code> (serviço + PostgreSQL + RabbitMQ efêmeros), Job de migração, espera do rollout e smoke em <code>/health/ready</code> e em um endpoint público.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Proteção da <code>main</code> nos três repositórios:</strong> pull request obrigatório e checks obrigatórios <code>build-test</code>, <code>security</code>, <code>sonar</code> e <code>deploy-kind</code>. Os PRs <code>os-service#12</code>, <code>billing-service#1</code> e <code>execution-service#1</code> foram aprovados com os quatro checks verdes.</p>
+<p>O meta-repositório continua fixando os commits dos componentes como submódulos; a publicação no Azure por tag estrita <code>vMAJOR.MINOR.PATCH</code> permanece no layout da Fase 3.</p>
+<h1>9. Observabilidade</h1>
+<ul>
+<li><strong>OpenTelemetry</strong> no <code>ServiceDefaults</code> compartilhado: traces, métricas e logs de ASP.NET Core e <code>HttpClient</code>, com a fonte <code>Wolverine</code> adicionada ao tracer. Como os comandos e eventos trafegam pelo Wolverine, <strong>o trace distribuído atravessa o RabbitMQ</strong> e mostra a Saga de ponta a ponta.</li>
+<li><strong>Local:</strong> exportação OTLP para o dashboard do Aspire, com logs, métricas e traces por recurso, além do painel do RabbitMQ e do Mailpit para inspecionar mensagens e e-mails.</li>
+<li><strong>Nuvem:</strong> o <code>ServiceDefaults</code> também suporta Azure Monitor/Application Insights, mantendo a stack da Fase 3 (Application Insights, Log Analytics, alertas e workbooks) como alvo quando os serviços forem publicados no AKS.</li>
+<li><strong>Saúde:</strong> <code>/health/live</code> e <code>/health/ready</code> em todos os serviços, usadas pelos probes do Kubernetes e pelo smoke do CI.</li>
+</ul>
+<h1>10. Limites de escopo e pendências</h1>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Situação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Publicação dos novos serviços no AKS e rotas no APIM</td>
+<td>Fora do escopo da Fase 4. O release no Azure continua no layout da Fase 3 (imagem única); o deploy automatizado em Kubernetes é demonstrado pelo job <code>deploy-kind</code> de cada serviço.</td>
+</tr>
+<tr>
+<td>Leitura de clientes pela Auth Function</td>
+<td>A Function ainda consulta a tabela de clientes do banco <code>catcar_os</code> em vez de chamar o OS Service por REST. Registrado como dívida técnica.</td>
+</tr>
+<tr>
+<td>Validação ao vivo do Mercado Pago</td>
+<td>Pendente das credenciais de teste (checkout, webhook e reembolso em sandbox). O adaptador é coberto por testes com HTTP simulado; sem credencial configurada, o Billing publica <code>PaymentFailed</code> (<code>payment-provider-not-configured</code>) e a Saga compensa liberando peças e cancelando o orçamento.</td>
+</tr>
+<tr>
+<td>Testes E2E entre repositórios</td>
+<td>Fora do escopo; a Saga é exercitada por BDD no OS Service e os serviços por testes de integração próprios.</td>
+</tr>
+<tr>
+<td>Vídeo de demonstração</td>
+<td><strong>Link do vídeo: a ser incluído.</strong></td>
+</tr>
+</tbody>
+</table>
+<h1>11. Metodologia e papel da Inteligência Artificial</h1>
+<p>A Inteligência Artificial foi empregada como multiplicação de mão de obra: um recurso para ampliar, acelerar e sistematizar a execução do trabalho de engenharia. Os conceitos arquiteturais, padrões de design e decisões técnicas — divisão dos microsserviços, Saga orquestrada com compensações, Transactional Outbox, escolha do Marten como banco de documentos, contratos por identidade de mensagem e o desenho das pipelines — foram originados do conhecimento arquitetural e da experiência de engenharia do autor, <strong>Davi Holanda</strong>. A assistência de IA potencializou a materialização dessas decisões, sem substituir sua autoria técnica.</p>
+</body>
+</html>
