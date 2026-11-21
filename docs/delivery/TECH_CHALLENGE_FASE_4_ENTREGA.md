@@ -34,7 +34,7 @@ Três microsserviços independentes, cada um com código-fonte, `Dockerfile`, ma
 
 ## 3. Vídeo de demonstração
 
-**Link do vídeo: a ser incluído.** (Upload no YouTube/Vimeo, até 15 minutos, público ou não listado: fluxo completo de uma OS entre os microsserviços, execução da Saga com tratamento de falhas, deploy automatizado com validação de testes e monitoramento dos fluxos distribuídos.)
+**Link do vídeo:** [https://youtu.be/03KytOujSX0](https://youtu.be/03KytOujSX0) (YouTube, 13 min 12 s, sem áudio, com legendas em português). Mostra o fluxo completo de uma OS entre os microsserviços, a execução da Saga com tratamento de falhas (compensação), o deploy automatizado com validação de testes (pipeline com build, testes, Sonar e deploy em Kubernetes kind) e o monitoramento dos fluxos distribuídos (traces no Aspire Dashboard). O pagamento demonstrado usa o simulador rotulado; a validação ao vivo do Mercado Pago está descrita na seção de limites.
 
 ## 4. Arquitetura geral
 
@@ -197,7 +197,7 @@ O meta-repositório continua fixando os commits dos componentes como submódulos
 | Deploy da autenticação no Azure | A nova consulta interna exige reconciliar a URL do OS Service, a chave compartilhada e as configurações legadas de banco antes de uma nova release. |
 | Validação ao vivo do Mercado Pago e **simulador de pagamento** | O adaptador do Mercado Pago está implementado (checkout, webhook com assinatura, polling e reembolso) e coberto por testes com HTTP simulado. **Validado ao vivo com uma conta de teste do Mercado Pago:** o Billing reportou o provedor `mercadopago` e criou uma preferência real do Checkout Pro (com `init_point` e `sandbox_init_point`). **Não validado:** pagamento aprovado, confirmação por polling e reembolso, porque a página de checkout do sandbox respondeu com erro e a criação do pagamento por API foi recusada (`401 Unauthorized use of live credentials`) — indisponibilidade do lado do Mercado Pago ou credenciais de teste incompatíveis, não identificadas. Para demonstrar o fluxo completo, o Billing tem um **simulador de pagamento, explicitamente rotulado como simulação**: selecionado por `Payments:Provider=Simulator` (o padrão continua sendo `MercadoPago`), exibe a página `SIMULATION - this is NOT Mercado Pago and no money moves`, grava `provider: simulator` e referências `SIM-` e é recusado em Production sem `Payments:Simulator:AllowInProduction=true`. As decisões (aprovar, rejeitar, deixar pendente) passam pelo mesmo fluxo interno do webhook real. Sem credencial e sem simulador, o Billing publica `PaymentFailed` (`payment-provider-not-configured`) e a Saga compensa. No AppHost local, o simulador entra automaticamente quando nenhuma credencial do Mercado Pago está configurada. |
 | Testes E2E entre repositórios | Fora do escopo; a Saga é exercitada por BDD no OS Service e os serviços por testes de integração próprios. |
-| Vídeo de demonstração | **Link do vídeo: a ser incluído.** |
+| Vídeo de demonstração | Publicado: [https://youtu.be/03KytOujSX0](https://youtu.be/03KytOujSX0). |
 
 ## 11. Metodologia e papel da Inteligência Artificial
 
