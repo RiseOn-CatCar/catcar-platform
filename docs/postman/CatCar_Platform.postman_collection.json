@@ -753,6 +753,40 @@
           ]
         },
         {
+          "name": "SIMULATOR ONLY: approve payment A (no money moves)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{correlationId}}"
+              }
+            ],
+            "url": "{{billingBaseUrl}}/simulator/payments/{{budgetIdA}}/decision",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"decision\":\"approve\"}"
+            },
+            "description": "Only exists when the billing service runs with Payments:Provider=Simulator (the AppHost default when no Mercado Pago token is configured); it answers 404 with the real Mercado Pago provider. This is a SIMULATION: it drives the same internal workflow as the real webhook, the payment is recorded with provider=simulator and a SIM- reference, and no money moves. Use {\"decision\":\"reject\"} to exercise the PaymentFailed compensation, or open the same URL (GET) in a browser for the labelled checkout page."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Simulated decision accepted', () => pm.response.to.have.status(200));",
+                  "pm.test('Provider is simulator', () => pm.expect(pm.response.json().provider).to.eql('simulator'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Poll work order A progress",
           "request": {
             "method": "GET",

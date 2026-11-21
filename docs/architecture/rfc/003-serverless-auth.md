@@ -12,7 +12,7 @@ Customer authentication has bursty traffic and a sharply bounded responsibility:
 
 ## Decision
 
-Deploy the `catcar-auth-function` as an Azure Function behind Azure API Management. The Function validates the customer's CPF by querying PostgreSQL and issues a short-lived JWT with `customer_id`, customer role, issuer, and audience claims. It obtains the signing configuration through managed identity and runtime secret storage. APIM validates the resulting token and propagates the validated customer identity to the versioned Service Operations API.
+Deploy the `catcar-auth-function` as an Azure Function behind Azure API Management. The Function validates the customer's CPF and calls the OS Service internal customer lookup using a shared internal API key. It issues a short-lived JWT with `customer_id`, customer role, issuer, and audience claims. It obtains the signing configuration through managed identity and runtime secret storage. APIM validates the resulting token and propagates the validated customer identity to the versioned Service Operations API. The Azure deployment must be reconciled before release.
 
 ## Rationale
 
@@ -21,7 +21,7 @@ A Function scales from zero-to-burst demand and gives customer authentication it
 ## Consequences
 
 - The Function CI builds, tests, publishes, and uploads a deployable artifact independently.
-- CPF validation and customer lookup require least-privilege access to the customer PostgreSQL data.
+- CPF validation and customer lookup require access to the OS Service internal API, not direct database access.
 - Cold-start behavior must be measured and the authentication endpoint must be covered by availability monitoring.
 - Token lifetime, issuer, audience, and key rotation must be configuration-driven and coordinated between the Function, APIM, and API consumers.
 - Service Operations endpoints consume the propagated `customer_id` claim to enforce customer ownership.

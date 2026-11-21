@@ -26,7 +26,7 @@ Três microsserviços independentes, cada um com código-fonte, `Dockerfile`, ma
 | [catcar-billing-service](https://github.com/RiseOn-CatCar/catcar-billing-service) | **Billing Service**: orçamentos, links de aprovação, e-mails e pagamentos Mercado Pago. | **Marten** (documentos JSONB) `catcar_billing` |
 | [catcar-execution-service](https://github.com/RiseOn-CatCar/catcar-execution-service) | **Execution Service**: catálogo de serviços, estoque, reservas e fila de execução. | PostgreSQL `catcar_execution` (EF Core) |
 | [catcar-platform](https://github.com/RiseOn-CatCar/catcar-platform) | Meta-repositório: submódulos, contratos de mensagens, AppHost do Aspire, coleção Postman e esta entrega. | — |
-| [catcar-auth-function](https://github.com/RiseOn-CatCar/catcar-auth-function) | Azure Function de autenticação do cliente por CPF e emissão de JWT. | Leitura na tabela de clientes do `catcar_os` (dívida técnica) |
+| [catcar-auth-function](https://github.com/RiseOn-CatCar/catcar-auth-function) | Azure Function de autenticação do cliente por CPF e emissão de JWT. | Sem banco próprio; consulta interna ao OS Service |
 | [catcar-database-infra](https://github.com/RiseOn-CatCar/catcar-database-infra) | Terraform do PostgreSQL Flexible Server, Key Vault, DNS privado e segredos (Fase 3). | — |
 | [catcar-kubernetes-infra](https://github.com/RiseOn-CatCar/catcar-kubernetes-infra) | Terraform de VNet, AKS, ACR, APIM, Azure Monitor, alertas e workbooks (Fase 3). | — |
 
@@ -85,8 +85,8 @@ flowchart LR
 ### Comunicação entre serviços
 
 - **Assíncrona (principal):** RabbitMQ com `WolverineFx.RabbitMQ`, roteamento convencional (uma exchange por identidade de mensagem e uma fila por consumidor), inbox e outbox duráveis. Toda mensagem tem `[MessageIdentity("catcar.<produtor>.<nome>.v1")]`, `WorkOrderId` e `CorrelationId`. Cada serviço mantém a **própria cópia** dos tipos (sem biblioteca compartilhada), com testes de contrato que comparam os nomes dos campos serializados.
-- **Síncrona (exceção, somente leitura):** o OS Service consulta o catálogo do Execution Service em `GET /internal/v1/catalog/services/{id}` e `/parts/{id}`, com service discovery do Aspire. As rotas `/internal/*` não têm autenticação e nunca são publicadas no APIM.
-- **Isolamento de dados:** nenhum serviço acessa o banco de outro. As informações do cliente necessárias ao Billing viajam nas mensagens (`RequestBudget`, `WorkOrderStatusChanged`). Única exceção conhecida: a Function de autenticação lê a tabela de clientes do `catcar_os` (registrada como dívida técnica).
+- **Síncrona (exceção, somente leitura):** o OS Service consulta o catálogo do Execution Service em `GET /internal/v1/catalog/services/{id}` e `/parts/{id}`. A Function consulta clientes no OS Service por API interna protegida por chave; as rotas internas não são publicadas no APIM.
+- **Isolamento de dados:** nenhum serviço acessa o banco de outro. As informações do cliente necessárias ao Billing viajam nas mensagens (`RequestBudget`, `WorkOrderStatusChanged`).
 - **Autenticação:** os três serviços validam o mesmo JWT administrativo emitido pelo OS Service; o JWT de cliente é emitido pela Azure Function.
 
 Contratos detalhados, mensagens e tabela da Saga: [`docs/architecture/messaging-contracts.md`](https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/messaging-contracts.md).
@@ -194,8 +194,8 @@ O meta-repositório continua fixando os commits dos componentes como submódulos
 | Item | Situação |
 |---|---|
 | Publicação dos novos serviços no AKS e rotas no APIM | Fora do escopo da Fase 4. O release no Azure continua no layout da Fase 3 (imagem única); o deploy automatizado em Kubernetes é demonstrado pelo job `deploy-kind` de cada serviço. |
-| Leitura de clientes pela Auth Function | A Function ainda consulta a tabela de clientes do banco `catcar_os` em vez de chamar o OS Service por REST. Registrado como dívida técnica. |
-| Validação ao vivo do Mercado Pago | Pendente das credenciais de teste (checkout, webhook e reembolso em sandbox). O adaptador é coberto por testes com HTTP simulado; sem credencial configurada, o Billing publica `PaymentFailed` (`payment-provider-not-configured`) e a Saga compensa liberando peças e cancelando o orçamento. |
+| Deploy da autenticação no Azure | A nova consulta interna exige reconciliar a URL do OS Service, a chave compartilhada e as configurações legadas de banco antes de uma nova release. |
+| Validação ao vivo do Mercado Pago e **simulador de pagamento** | O adaptador do Mercado Pago está implementado (checkout, webhook com assinatura, polling e reembolso) e coberto por testes com HTTP simulado, mas **não foi validado contra o sandbox real**: a conta de teste do Mercado Pago não pôde ser criada por indisponibilidade do serviço. Para demonstrar o fluxo completo, o Billing tem um **simulador de pagamento, explicitamente rotulado como simulação**: selecionado por `Payments:Provider=Simulator` (o padrão continua sendo `MercadoPago`), exibe a página `SIMULATION - this is NOT Mercado Pago and no money moves`, grava `provider: simulator` e referências `SIM-` e é recusado em Production sem `Payments:Simulator:AllowInProduction=true`. As decisões (aprovar, rejeitar, deixar pendente) passam pelo mesmo fluxo interno do webhook real. Sem credencial e sem simulador, o Billing publica `PaymentFailed` (`payment-provider-not-configured`) e a Saga compensa. No AppHost local, o simulador entra automaticamente quando nenhuma credencial do Mercado Pago está configurada. |
 | Testes E2E entre repositórios | Fora do escopo; a Saga é exercitada por BDD no OS Service e os serviços por testes de integração próprios. |
 | Vídeo de demonstração | **Link do vídeo: a ser incluído.** |
 

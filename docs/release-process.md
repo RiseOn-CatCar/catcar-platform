@@ -31,3 +31,7 @@ The release serializes Azure changes, promotes the validated image digests, and 
 The first authorized deployment must verify the paused write and approval-link barriers, read/login availability, pause preservation across a failed run, and re-pausing after a failed smoke. These cloud proofs remain pending until an authorized first release; Kind does not prove APIM, managed identity or private network behavior.
 
 After capturing release evidence, use the [Azure teardown guide](azure-teardown.md) to remove the ephemeral deployment while preserving its bootstrap for the next tag.
+
+## Azure reconciliation pending before the next tag
+
+The Phase 4 changes are not deployed to Azure. Before the next release tag, reconcile the deployment: configure the OS service URL and the shared internal API key for the authentication function (`os_service_base_url`, `os_service_internal_api_key`; the empty Terraform defaults are not valid runtime settings) and remove the deprecated function database settings as part of the Azure release migration. The release still uses the Phase 3 single-image layout, so the Billing and Execution services and their APIM routes also need their own release migration.

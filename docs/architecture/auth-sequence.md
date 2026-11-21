@@ -8,12 +8,12 @@ sequenceDiagram
     actor Customer as Customer
     participant APIM as API Management
     participant Auth as Auth Function
-    participant DB as PostgreSQL customers
+    participant OS as OS Service internal API
 
     Customer->>APIM: POST /api/auth/customer (CPF)
     APIM->>Auth: Forward CPF authentication request
-    Auth->>DB: Validate CPF and query customer
-    DB-->>Auth: Customer identity or not found
+    Auth->>OS: Validate CPF and request customer lookup with internal key
+    OS-->>Auth: Customer ID and active status or not found
     Auth-->>APIM: Signed JWT with customer_id or RFC 7807 failure
     APIM-->>Customer: JWT or failure response
     Customer->>APIM: Request /api/v1/service-operations/... (Bearer JWT)
@@ -22,7 +22,7 @@ sequenceDiagram
     APIM-->>Customer: API response
 ```
 
-The gateway is the public policy boundary. The serverless Auth Function validates the customer's CPF against PostgreSQL and issues a short-lived JWT containing `customer_id`. APIM validates the token using the configured signing key and propagates the validated identity to the AKS API. No password or signing key is placed in source control.
+The gateway is the public policy boundary. The serverless Auth Function validates the customer's CPF and calls the OS Service internal API to look up the customer before issuing a short-lived JWT containing `customer_id`. APIM validates the token using the configured signing key and propagates the validated identity to the AKS API. Azure deployment requires a separate migration before this topology is released.
 
 ## Work order opening
 

@@ -100,7 +100,7 @@
 <tr>
 <td><a href="https://github.com/RiseOn-CatCar/catcar-auth-function">catcar-auth-function</a></td>
 <td>Azure Function de autenticação do cliente por CPF e emissão de JWT.</td>
-<td>Leitura na tabela de clientes do <code>catcar_os</code> (dívida técnica)</td>
+<td>Sem banco próprio; consulta interna ao OS Service</td>
 </tr>
 <tr>
 <td><a href="https://github.com/RiseOn-CatCar/catcar-database-infra">catcar-database-infra</a></td>
@@ -175,8 +175,8 @@
 <path class="e" d="M 175 165 C 235 165 235 285 290 285"/>
 <path class="e" d="M 175 180 C 250 180 250 512 290 512"/>
 <text class="lbl" x="205" y="112">REST /api/v1/*</text>
-<path class="e dash" d="M 175 262 L 210 262 L 210 14 L 835 14 L 835 40"/>
-<text class="lbl" x="470" y="10">auth-function lê clientes de catcar_os (dívida técnica)</text>
+<path class="e dash" d="M 175 262 L 210 262 L 210 75 L 290 75"/>
+<text class="lbl" x="210" y="225">consulta interna</text>
 <path class="e" d="M 590 72 L 740 72"/>
 <path class="e" d="M 590 300 C 660 300 660 368 740 368"/>
 <path class="e" d="M 590 533 L 740 533"/>
@@ -196,8 +196,8 @@
 <h2>Comunicação entre serviços</h2>
 <ul>
 <li><strong>Assíncrona (principal):</strong> RabbitMQ com <code>WolverineFx.RabbitMQ</code>, roteamento convencional (uma exchange por identidade de mensagem e uma fila por consumidor), inbox e outbox duráveis. Toda mensagem tem <code>[MessageIdentity("catcar.&lt;produtor&gt;.&lt;nome&gt;.v1")]</code>, <code>WorkOrderId</code> e <code>CorrelationId</code>. Cada serviço mantém a <strong>própria cópia</strong> dos tipos (sem biblioteca compartilhada), com testes de contrato que comparam os nomes dos campos serializados.</li>
-<li><strong>Síncrona (exceção, somente leitura):</strong> o OS Service consulta o catálogo do Execution Service em <code>GET /internal/v1/catalog/services/{id}</code> e <code>/parts/{id}</code>, com service discovery do Aspire. As rotas <code>/internal/*</code> não têm autenticação e nunca são publicadas no APIM.</li>
-<li><strong>Isolamento de dados:</strong> nenhum serviço acessa o banco de outro. As informações do cliente necessárias ao Billing viajam nas mensagens (<code>RequestBudget</code>, <code>WorkOrderStatusChanged</code>). Única exceção conhecida: a Function de autenticação lê a tabela de clientes do <code>catcar_os</code> (registrada como dívida técnica).</li>
+<li><strong>Síncrona (exceção, somente leitura):</strong> o OS Service consulta o catálogo do Execution Service. A Function consulta clientes pela API interna do OS Service, protegida por chave; as rotas internas não são publicadas no APIM.</li>
+<li><strong>Isolamento de dados:</strong> nenhum serviço acessa o banco de outro. As informações do cliente necessárias ao Billing viajam nas mensagens (<code>RequestBudget</code>, <code>WorkOrderStatusChanged</code>).</li>
 <li><strong>Autenticação:</strong> os três serviços validam o mesmo JWT administrativo emitido pelo OS Service; o JWT de cliente é emitido pela Azure Function.</li>
 </ul>
 <p>Contratos detalhados, mensagens e tabela da Saga: <a href="https://github.com/RiseOn-CatCar/catcar-platform/blob/main/docs/architecture/messaging-contracts.md"><code>docs/architecture/messaging-contracts.md</code></a>.</p>
@@ -486,12 +486,12 @@
 <td>Fora do escopo da Fase 4. O release no Azure continua no layout da Fase 3 (imagem única); o deploy automatizado em Kubernetes é demonstrado pelo job <code>deploy-kind</code> de cada serviço.</td>
 </tr>
 <tr>
-<td>Leitura de clientes pela Auth Function</td>
-<td>A Function ainda consulta a tabela de clientes do banco <code>catcar_os</code> em vez de chamar o OS Service por REST. Registrado como dívida técnica.</td>
+<td>Deploy da autenticação no Azure</td>
+<td>A nova consulta interna exige reconciliar a URL do OS Service, a chave compartilhada e as configurações legadas de banco antes de uma nova release.</td>
 </tr>
 <tr>
-<td>Validação ao vivo do Mercado Pago</td>
-<td>Pendente das credenciais de teste (checkout, webhook e reembolso em sandbox). O adaptador é coberto por testes com HTTP simulado; sem credencial configurada, o Billing publica <code>PaymentFailed</code> (<code>payment-provider-not-configured</code>) e a Saga compensa liberando peças e cancelando o orçamento.</td>
+<td>Validação ao vivo do Mercado Pago e <strong>simulador de pagamento</strong></td>
+<td>O adaptador do Mercado Pago está implementado (checkout, webhook com assinatura, polling e reembolso) e coberto por testes com HTTP simulado, mas <strong>não foi validado contra o sandbox real</strong>: a conta de teste do Mercado Pago não pôde ser criada por indisponibilidade do serviço. Para demonstrar o fluxo completo, o Billing tem um <strong>simulador de pagamento, explicitamente rotulado como simulação</strong>: selecionado por <code>Payments:Provider=Simulator</code> (o padrão continua sendo <code>MercadoPago</code>), exibe a página <code>SIMULATION - this is NOT Mercado Pago and no money moves</code>, grava <code>provider: simulator</code> e referências <code>SIM-</code> e é recusado em Production sem <code>Payments:Simulator:AllowInProduction=true</code>. As decisões (aprovar, rejeitar, deixar pendente) passam pelo mesmo fluxo interno do webhook real. Sem credencial e sem simulador, o Billing publica <code>PaymentFailed</code> (<code>payment-provider-not-configured</code>) e a Saga compensa. No AppHost local, o simulador entra automaticamente quando nenhuma credencial do Mercado Pago está configurada.</td>
 </tr>
 <tr>
 <td>Testes E2E entre repositórios</td>
