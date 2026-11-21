@@ -13,6 +13,7 @@ var authStorage = builder.AddAzureStorage("auth-storage").RunAsEmulator();
 
 var jwtSecret = builder.AddParameter("jwt-secret", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)), secret: true);
 var customerJwtKey = builder.AddParameter("customer-jwt-signing-key", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)), secret: true);
+var internalApiKey = builder.AddParameter("internal-api-key", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)), secret: true);
 // Mercado Pago credentials are optional locally: a parameter is only wired when
 // Parameters:<name> is configured (user-secrets or environment); otherwise the payment step fails fast.
 IResourceBuilder<ParameterResource>? OptionalParameter(string name, bool secret = false) =>
@@ -46,11 +47,23 @@ billing
     .WaitFor(billingDb)
     .WaitFor(messaging)
     .WaitFor(mailpit);
-if (mercadoPagoToken is not null) billing.WithEnvironment("MercadoPago__AccessToken", mercadoPagoToken);
-if (mercadoPagoWebhook is not null) billing.WithEnvironment("MercadoPago__WebhookSecret", mercadoPagoWebhook);
-if (mercadoPagoNotificationUrl is not null) billing.WithEnvironment("MercadoPago__NotificationUrl", mercadoPagoNotificationUrl);
+if (mercadoPagoToken is not null)
+{
+    billing.WithEnvironment("Payments__Provider", "MercadoPago").WithEnvironment("MercadoPago__AccessToken", mercadoPagoToken);
+    if (mercadoPagoWebhook is not null) billing.WithEnvironment("MercadoPago__WebhookSecret", mercadoPagoWebhook);
+    if (mercadoPagoNotificationUrl is not null) billing.WithEnvironment("MercadoPago__NotificationUrl", mercadoPagoNotificationUrl);
+}
+else
+{
+    // No Mercado Pago credential configured: run the labelled payment SIMULATOR (no money moves; provider=simulator, SIM- references).
+    // Configure Parameters:mercadopago-access-token to use the real Mercado Pago adapter instead.
+    billing.WithEnvironment("Payments__Provider", "Simulator")
+        .WithEnvironment("Payments__Simulator__BaseUrl", billing.GetEndpoint("http"));
+}
 
-builder.AddDotnetProject("os-service", "../../catcar-os-service/src/Api/CatCar.Api.csproj")
+var osService = builder.AddDotnetProject("os-service", "../../catcar-os-service/src/Api/CatCar.Api.csproj")
+    .WithHttpEndpoint(name: "http")
+    .WithHttpHealthCheck("/health/ready")
     .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
     .WithReference(osDb)
     .WithReference(messaging)
@@ -58,6 +71,7 @@ builder.AddDotnetProject("os-service", "../../catcar-os-service/src/Api/CatCar.A
     .WithEnvironment("Services__Execution", "https+http://execution-service")
     .WithEnvironment("Jwt__Secret", jwtSecret)
     .WithEnvironment("CustomerJwt__SigningKey", customerJwtKey)
+    .WithEnvironment("InternalApi__Key", internalApiKey)
     .WaitFor(osDb)
     .WaitFor(messaging)
     .WaitFor(execution);
@@ -74,7 +88,8 @@ builder.AddExecutable("auth-function", "func", Path.GetDirectoryName(authFunctio
     .WithUrlForEndpoint("http", url => { url.Url = "/api/auth/customer"; url.DisplayText = "Customer token page"; })
     .WithEnvironment("AzureWebJobsStorage", authStorage.AddBlobs("auth-host-blobs"))
     .WithEnvironment("AzureWebJobsDisableHomepage", "true")
-    .WithReference(osDb)
+    .WithEnvironment("OsService__BaseUrl", osService.GetEndpoint("http"))
+    .WithEnvironment("OsService__InternalApiKey", internalApiKey)
     .WithEnvironment("FUNCTIONS_WORKER_RUNTIME", "dotnet-isolated")
     .WithEnvironment("FUNCTIONS_EXTENSION_VERSION", "~4")
     .WithEnvironment("AZURE_FUNCTIONS_ENVIRONMENT", "Development")
@@ -84,7 +99,7 @@ builder.AddExecutable("auth-function", "func", Path.GetDirectoryName(authFunctio
     .WithEnvironment("CustomerJwt__Audience", "CatCar.Api")
     .WithEnvironment("CustomerJwt__ExpirationMinutes", "60")
     .WithEnvironment("CustomerJwt__CorsOrigin", "http://localhost:7071")
-    .WaitFor(osDb)
+    .WaitFor(osService)
     .WaitFor(authStorage);
 
 builder.Build().Run();

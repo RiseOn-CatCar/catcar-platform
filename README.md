@@ -65,7 +65,7 @@ flowchart TD
 | `catcar-os-service` | Work orders, customers, vehicles and administrative identity; hosts the `WorkOrderSaga` orchestrator | PostgreSQL `catcar_os` (EF Core) | [Repository](https://github.com/RiseOn-CatCar/catcar-os-service) |
 | `catcar-billing-service` | Budgets, approval links, e-mails and Mercado Pago payments | Marten document database (JSONB on PostgreSQL) `catcar_billing` | [Repository](https://github.com/RiseOn-CatCar/catcar-billing-service) |
 | `catcar-execution-service` | Service catalog, inventory, reservations and execution queue | PostgreSQL `catcar_execution` (EF Core) | [Repository](https://github.com/RiseOn-CatCar/catcar-execution-service) |
-| `catcar-auth-function` | Customer authentication by CPF and JWT issuance (Azure Function) | Read-only access to the customers table of `catcar_os` (recorded technical debt) | [Repository](https://github.com/RiseOn-CatCar/catcar-auth-function) |
+| `catcar-auth-function` | Customer authentication by CPF and JWT issuance (Azure Function) | None; customer lookup through the OS Service internal API | [Repository](https://github.com/RiseOn-CatCar/catcar-auth-function) |
 | `catcar-database-infra` | PostgreSQL and secrets infrastructure | n/a | [Repository](https://github.com/RiseOn-CatCar/catcar-database-infra) |
 | `catcar-kubernetes-infra` | AKS, APIM, ACR and observability infrastructure | n/a | [Repository](https://github.com/RiseOn-CatCar/catcar-kubernetes-infra) |
 
@@ -115,7 +115,7 @@ flowchart LR
     Client -->|"direct HTTP (local, kind)"| BILL
     Client -->|"direct HTTP (local, kind)"| EXEC
     APIM -->|"POST /api/auth/customer"| AuthFn
-    AuthFn -.->|"read-only customer lookup (technical debt)"| OSDB
+    AuthFn -->|"internal customer lookup"| OS
 
     OS --- OSDB
     BILL --- BILLDB
@@ -212,7 +212,7 @@ flowchart TB
     APIM -->|Domain REST API Traffic| AKSSubnet
 
     AppPod -->|Read / Write Transactions| PostgresServer
-    AuthFn -->|Read-only CPF Lookup| SchemaSO
+    AuthFn -.->|Legacy Azure deployment pending migration| AppPod
     AppPod -.->|Read Secrets via Managed Identity| KV
     AuthFn -.->|Read Signing Key via Managed Identity| KV
 
@@ -226,7 +226,7 @@ flowchart TB
 
 ## Local Development Runtime with .NET Aspire
 
-Local platform execution is orchestrated through `aspire/CatCar.AppHost/CatCar.AppHost.csproj`. `make dev` starts the OS, Billing and Execution services, the authentication function, PostgreSQL (databases `catcar_os`, `catcar_billing` and `catcar_execution`), RabbitMQ, Mailpit and the Aspire dashboard. Mercado Pago credentials are optional parameters (`mercadopago-access-token`, `mercadopago-webhook-secret`, `mercadopago-notification-url`); without them the payment step fails fast and the saga compensates.
+Local platform execution is orchestrated through `aspire/CatCar.AppHost/CatCar.AppHost.csproj`. `make dev` starts the OS, Billing and Execution services, the authentication function, PostgreSQL (databases `catcar_os`, `catcar_billing` and `catcar_execution`), RabbitMQ, Mailpit and the Aspire dashboard. Mercado Pago credentials are optional parameters (`mercadopago-access-token`, `mercadopago-webhook-secret`, `mercadopago-notification-url`). When no access token is configured, the Billing service runs the **payment simulator** (`Payments:Provider=Simulator`): a clearly labelled simulation where no money moves, payments are recorded as `provider: simulator` with `SIM-` references, and the checkout page at `/simulator/payments/{paymentId}` lets you approve, reject or leave the payment pending. The real Mercado Pago adapter remains the default provider everywhere else; the simulator exists because the Mercado Pago sandbox account could not be created and is refused in Production unless explicitly allowed. The authentication function no longer reads any database: it resolves customers through the OS service's internal API using a shared `internal-api-key` parameter.
 
 The dashboard displays service endpoints, health, logs and traces. Each service owns its data; RabbitMQ carries asynchronous integration messages. The services do not reference each other at build time; the AppHost references the three APIs by submodule path.
 
